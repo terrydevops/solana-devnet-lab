@@ -16,6 +16,8 @@ lab cluster; none of them says anything about mainnet.
 | 5. Foundation | Is any of this being measured? Is the host fine? | A dead collector looks like a quiet system |
 
 Alerting runs top-down: page for the cause, stay quiet about the symptoms (inhibit rules).
+Where the text below says "pages" read priority p1, and "tickets" p3; p2 sits between them:
+the on-call is told at once and nobody is woken. The list per priority is in the README.
 Diagnosis runs bottom-up: trust the foundation before believing the chain.
 
 On an Ethereum validator stack this layer would be "signing" (the remote signer). Here it is "funds": a Solana validator
@@ -144,8 +146,8 @@ Current: bootstrap 499.99 SOL, validator2 99.95 SOL. Measured spend over ten min
 rate: about 0.06 SOL per hour per validator. At that rate validator2's 100 SOL lasts roughly 70
 days. (Lab slots are faster than mainnet, so the cost per hour here is not the mainnet cost.)
 
-`IdentityBalanceRunningOut` pages when the projection reaches zero within 3 days.
-`IdentityBalanceLow` tickets under 1 SOL.
+`IdentityBalanceRunningOut` is p2 (tell the on-call) when the projection reaches zero within 3 days.
+`IdentityBalanceLow` is p1 under 1 SOL: at about 1 SOL a day that is the last day of voting.
 
 > **Watch out:** the exporter reports identity accounts and vote accounts under the same metric.
 > A vote account holds only its rent reserve (0.027 SOL here). A rule on the raw metric fires for

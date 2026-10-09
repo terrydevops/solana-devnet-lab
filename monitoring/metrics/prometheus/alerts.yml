@@ -1,7 +1,15 @@
 # Alerting rules, grouped by layer. Alerting runs top-down: page for the cause, stay quiet about
 # the symptoms (inhibit rules in alertmanager.yml). Diagnosis runs bottom-up.
 #
-# severity: page = wake someone up, ticket = fix during working hours.
+# Three priorities, by what happens if nobody acts:
+#   p1  page now, at any hour. Rewards or reputation are being lost at this moment, or will be
+#       within the hour, and a person can do something about it.
+#   p2  tell the on-call now, do not wake them. Nothing is lost yet, but the safety margin is gone
+#       (the spare is down, the disk fills tomorrow) or the monitoring is partly blind.
+#   p3  a ticket for working hours. Trends and hygiene.
+#
+# The same fault has a different priority on different hosts: a dead validator process is p1 on
+# the host that runs a staked identity and p2 on the hot spare or the RPC node.
 #
 # Every threshold here is a starting value for a two-validator lab with 400 ms slots. On real
 # hosts they come from a baseline, not from this file.
@@ -33,6 +41,19 @@ groups:
           solana_account_balance
           and on (address)
           label_replace(group by (nodekey) (solana_validator_last_vote), "address", "$1", "nodekey", "(.+)")
+
+      # 1 for a host that ran a staked (voting) identity at any time in the last ten minutes.
+      # "In the last ten minutes" on purpose: when such a host dies its exporter dies with it,
+      # and the alert about that death must still know what the host was.
+      - record: solana:host_ran_voting_identity:10m
+        expr: >
+          max_over_time((
+            max by (node) (
+              solana_node_identity
+              and on (identity)
+              label_replace(group by (nodekey) (solana_validator_last_vote), "identity", "$1", "nodekey", "(.+)")
+            )
+          )[10m:])
 
       # Each validator's share of all active stake. The share, not the amount, decides how many
       # leader slots a validator gets, and it can shrink while the amount stays the same.
@@ -68,7 +89,7 @@ groups:
         expr: increase(solana_cluster_root_slot[2m]) == 0
         for: 1m
         labels:
-          severity: page
+          severity: p1
         annotations:
           summary: "cluster root slot has not advanced in 2 minutes"
 
@@ -80,7 +101,7 @@ groups:
           and on () increase(max(solana_cluster_root_slot)[10m:]) > 0
         for: 5m
         labels:
-          severity: ticket
+          severity: p2
         annotations:
           summary: "leader slots are no longer being counted: skip rates and their alerts are blind"
 
@@ -88,7 +109,7 @@ groups:
         expr: solana:cluster_skip_rate:1h > 0.25
         for: 15m
         labels:
-          severity: ticket
+          severity: p3
         annotations:
           summary: "more than a quarter of leader slots in the cluster were skipped over the last hour"
 
@@ -102,7 +123,7 @@ groups:
         expr: solana_validator_delinquent == 1
         for: 30s
         labels:
-          severity: page
+          severity: p1
         annotations:
           summary: "validator {{ $labels.nodekey }} is marked delinquent"
 
@@ -114,7 +135,7 @@ groups:
         # pending. An early warning that arrives after the verdict is no warning.
         for: 15s
         labels:
-          severity: page
+          severity: p1
         annotations:
           summary: "validator {{ $labels.nodekey }} last voted {{ $value }} slots behind the cluster"
 
@@ -123,7 +144,7 @@ groups:
         expr: increase(solana_validator_root_slot[3m]) == 0
         for: 1m
         labels:
-          severity: page
+          severity: p1
         annotations:
           summary: "validator {{ $labels.nodekey }} root slot has not advanced in 3 minutes"
 
@@ -132,7 +153,7 @@ groups:
       - alert: VotingIdentityOnTwoHosts
         expr: solana:voting_identity_hosts:count > 1
         labels:
-          severity: page
+          severity: p1
         annotations:
           summary: "identity {{ $labels.identity }} runs on {{ $value }} hosts at once"
 
@@ -146,7 +167,7 @@ groups:
           unless on (identity) solana_node_identity
         for: 30s
         labels:
-          severity: page
+          severity: p1
         annotations:
           summary: "no host runs validator identity {{ $labels.identity }}"
 
@@ -155,7 +176,7 @@ groups:
         expr: solana:validator_skip_rate:1h > 0.20
         for: 15m
         labels:
-          severity: ticket
+          severity: p3
         annotations:
           summary: "validator {{ $labels.nodekey }} skipped over 20% of its leader slots in the last hour"
 
@@ -166,7 +187,7 @@ groups:
         expr: solana:validator_credits_ratio:10m < 0.90
         for: 15m
         labels:
-          severity: ticket
+          severity: p3
         annotations:
           summary: "validator {{ $labels.nodekey }} earns {{ $value | humanizePercentage }} of the best validator's vote credits"
 
@@ -177,7 +198,7 @@ groups:
           < 0.9 * (solana_validator_active_stake offset 1h)
         for: 5m
         labels:
-          severity: ticket
+          severity: p3
         annotations:
           summary: "active stake of {{ $labels.nodekey }} fell more than 10% within an hour"
 
@@ -189,7 +210,7 @@ groups:
           < 0.9 * (solana:validator_stake_share:ratio offset 1h)
         for: 5m
         labels:
-          severity: ticket
+          severity: p3
         annotations:
           summary: "stake share of {{ $labels.nodekey }} is {{ $value | humanizePercentage }}, more than 10% below an hour ago"
 
@@ -202,7 +223,7 @@ groups:
         expr: predict_linear(solana:identity_balance:sol[6h], 3 * 24 * 3600) < 0
         for: 30m
         labels:
-          severity: page
+          severity: p2
         annotations:
           summary: "identity account {{ $labels.address }} is projected to be empty within 3 days"
 
@@ -210,7 +231,7 @@ groups:
         expr: solana:identity_balance:sol < 1
         for: 10m
         labels:
-          severity: ticket
+          severity: p1
         annotations:
           summary: "identity account {{ $labels.address }} holds less than 1 SOL"
 
@@ -219,36 +240,72 @@ groups:
   - name: node
     rules:
       - alert: NodeUnhealthy
-        expr: solana_node_is_healthy == 0
+        expr: >
+          (solana_node_is_healthy == 0)
+          and on (node) solana:host_ran_voting_identity:10m
         for: 1m
         labels:
-          severity: page
+          severity: p1
         annotations:
-          summary: "node {{ $labels.node }} reports itself unhealthy"
+          summary: "node {{ $labels.node }} reports itself unhealthy (host runs a staked identity)"
+
+      - alert: NodeUnhealthy
+        expr: >
+          (solana_node_is_healthy == 0)
+          unless on (node) solana:host_ran_voting_identity:10m
+        for: 1m
+        labels:
+          severity: p2
+        annotations:
+          summary: "node {{ $labels.node }} reports itself unhealthy (standby or RPC host: redundancy or service lost, no stake at risk)"
 
       - alert: NodeFallingBehind
-        expr: solana_node_num_slots_behind > 50
+        expr: >
+          (solana_node_num_slots_behind > 50)
+          and on (node) solana:host_ran_voting_identity:10m
         for: 2m
         labels:
-          severity: page
+          severity: p1
         annotations:
-          summary: "node {{ $labels.node }} is {{ $value }} slots behind the cluster"
+          summary: "node {{ $labels.node }} is {{ $value }} slots behind the cluster (host runs a staked identity)"
+
+      - alert: NodeFallingBehind
+        expr: >
+          (solana_node_num_slots_behind > 50)
+          unless on (node) solana:host_ran_voting_identity:10m
+        for: 2m
+        labels:
+          severity: p2
+        annotations:
+          summary: "node {{ $labels.node }} is {{ $value }} slots behind the cluster (standby or RPC host: redundancy or service lost, no stake at risk)"
 
       # The node answers but its slot counter does not move.
       - alert: NodeSlotStalled
-        expr: increase(solana_node_slot_height[2m]) == 0
+        expr: >
+          (increase(solana_node_slot_height[2m]) == 0)
+          and on (node) solana:host_ran_voting_identity:10m
         for: 1m
         labels:
-          severity: page
+          severity: p1
         annotations:
-          summary: "node {{ $labels.node }} slot height has not advanced in 2 minutes"
+          summary: "node {{ $labels.node }} slot height has not advanced in 2 minutes (host runs a staked identity)"
+
+      - alert: NodeSlotStalled
+        expr: >
+          (increase(solana_node_slot_height[2m]) == 0)
+          unless on (node) solana:host_ran_voting_identity:10m
+        for: 1m
+        labels:
+          severity: p2
+        annotations:
+          summary: "node {{ $labels.node }} slot height has not advanced in 2 minutes (standby or RPC host: redundancy or service lost, no stake at risk)"
 
       # Mixed versions are normal for the length of a rolling upgrade and a mistake after it.
       - alert: NodeVersionMismatch
         expr: count(count by (version) (solana_node_version)) > 1
         for: 1h
         labels:
-          severity: ticket
+          severity: p3
         annotations:
           summary: "nodes have been running different versions for over an hour"
 
@@ -257,18 +314,30 @@ groups:
   - name: foundation
     rules:
       - alert: NodeDown
-        expr: up{job="solana"} == 0
+        expr: >
+          (up{job="solana"} == 0)
+          and on (node) solana:host_ran_voting_identity:10m
         for: 1m
         labels:
-          severity: page
+          severity: p1
         annotations:
-          summary: "exporter for node {{ $labels.node }} is not being scraped"
+          summary: "exporter for node {{ $labels.node }} is not being scraped (host runs a staked identity)"
+
+      - alert: NodeDown
+        expr: >
+          (up{job="solana"} == 0)
+          unless on (node) solana:host_ran_voting_identity:10m
+        for: 1m
+        labels:
+          severity: p2
+        annotations:
+          summary: "exporter for node {{ $labels.node }} is not being scraped (standby or RPC host: redundancy or service lost, no stake at risk)"
 
       - alert: MonitoringTargetDown
         expr: up{job=~"prometheus|alertmanager|alert-sink|grafana|loki|solana-credits"} == 0
         for: 2m
         labels:
-          severity: ticket
+          severity: p2
         annotations:
           summary: "monitoring component {{ $labels.job }} is not being scraped"
 
@@ -276,7 +345,7 @@ groups:
         expr: up{job=~"node|alloy"} == 0
         for: 2m
         labels:
-          severity: ticket
+          severity: p2
         annotations:
           summary: "agent {{ $labels.job }} on {{ $labels.node }} is not being scraped"
 
@@ -290,37 +359,70 @@ groups:
             24 * 3600) < 0
         for: 15m
         labels:
-          severity: page
+          severity: p2
         annotations:
           summary: "{{ $labels.mountpoint }} on {{ $labels.node }} is projected to fill within 24 hours"
 
       - alert: HostDiskSpaceLow
         expr: >
-          node_filesystem_avail_bytes{mountpoint=~"/mnt/(ledger|accounts|snapshots)"}
-          / node_filesystem_size_bytes{mountpoint=~"/mnt/(ledger|accounts|snapshots)"} < 0.15
+          (node_filesystem_avail_bytes{mountpoint=~"/mnt/(ledger|accounts|snapshots)"} / node_filesystem_size_bytes{mountpoint=~"/mnt/(ledger|accounts|snapshots)"} < 0.15)
+          and on (node) solana:host_ran_voting_identity:10m
         for: 5m
         labels:
-          severity: page
+          severity: p1
         annotations:
-          summary: "{{ $labels.mountpoint }} on {{ $labels.node }} has under 15% free space"
+          summary: "{{ $labels.mountpoint }} on {{ $labels.node }} has under 15% free space (host runs a staked identity)"
+
+      - alert: HostDiskSpaceLow
+        expr: >
+          (node_filesystem_avail_bytes{mountpoint=~"/mnt/(ledger|accounts|snapshots)"} / node_filesystem_size_bytes{mountpoint=~"/mnt/(ledger|accounts|snapshots)"} < 0.15)
+          unless on (node) solana:host_ran_voting_identity:10m
+        for: 5m
+        labels:
+          severity: p2
+        annotations:
+          summary: "{{ $labels.mountpoint }} on {{ $labels.node }} has under 15% free space (standby or RPC host: redundancy or service lost, no stake at risk)"
 
       # Restart=on-failure keeps a crashing service looking alive. Count the restarts.
       - alert: ValidatorServiceRestarting
-        expr: increase(node_systemd_service_restart_total{name="sol.service"}[15m]) > 2
+        expr: >
+          (increase(node_systemd_service_restart_total{name="sol.service"}[15m]) > 2)
+          and on (node) solana:host_ran_voting_identity:10m
         labels:
-          severity: page
+          severity: p1
         annotations:
-          summary: "sol.service on {{ $labels.node }} restarted more than twice in 15 minutes"
+          summary: "sol.service on {{ $labels.node }} restarted more than twice in 15 minutes (host runs a staked identity)"
+
+      - alert: ValidatorServiceRestarting
+        expr: >
+          (increase(node_systemd_service_restart_total{name="sol.service"}[15m]) > 2)
+          unless on (node) solana:host_ran_voting_identity:10m
+        labels:
+          severity: p2
+        annotations:
+          summary: "sol.service on {{ $labels.node }} restarted more than twice in 15 minutes (standby or RPC host: redundancy or service lost, no stake at risk)"
 
       # The unit is neither running nor being restarted: someone stopped it, or it gave up.
       # The spare is included: a hot spare that is not running is not a spare.
       - alert: ValidatorServiceNotActive
-        expr: node_systemd_unit_state{name="sol.service",state="active"} == 0
+        expr: >
+          (node_systemd_unit_state{name="sol.service",state="active"} == 0)
+          and on (node) solana:host_ran_voting_identity:10m
         for: 2m
         labels:
-          severity: page
+          severity: p1
         annotations:
-          summary: "sol.service on {{ $labels.node }} is not active"
+          summary: "sol.service on {{ $labels.node }} is not active (host runs a staked identity)"
+
+      - alert: ValidatorServiceNotActive
+        expr: >
+          (node_systemd_unit_state{name="sol.service",state="active"} == 0)
+          unless on (node) solana:host_ran_voting_identity:10m
+        for: 2m
+        labels:
+          severity: p2
+        annotations:
+          summary: "sol.service on {{ $labels.node }} is not active (standby or RPC host: redundancy or service lost, no stake at risk)"
 
       # The accounts database is memory-mapped; a validator short of memory is killed by the
       # kernel and comes back through the restart rule above. This is the earlier signal.
@@ -328,6 +430,6 @@ groups:
         expr: node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes < 0.10
         for: 10m
         labels:
-          severity: ticket
+          severity: p2
         annotations:
           summary: "{{ $labels.node }} has under 10% of memory available"

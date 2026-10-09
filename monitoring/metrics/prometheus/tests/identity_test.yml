@@ -24,7 +24,7 @@ tests:
       - eval_time: 80s
         alertname: VotingIdentityOnTwoHosts
         exp_alerts:
-          - exp_labels: { severity: page, identity: STAKED }
+          - exp_labels: { severity: p1, identity: STAKED }
             exp_annotations: { summary: "identity STAKED runs on 2 hosts at once" }
       - eval_time: 80s
         alertname: VotingIdentityNotHeld
@@ -35,7 +35,7 @@ tests:
       - eval_time: 180s
         alertname: VotingIdentityNotHeld
         exp_alerts:
-          - exp_labels: { severity: page, identity: STAKED, nodekey: STAKED }
+          - exp_labels: { severity: p1, identity: STAKED, nodekey: STAKED }
             exp_annotations: { summary: "no host runs validator identity STAKED" }
       - eval_time: 260s
         alertname: VotingIdentityNotHeld

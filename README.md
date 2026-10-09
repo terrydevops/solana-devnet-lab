@@ -132,7 +132,17 @@ container's own filesystem, only `/mnt/*` is on volumes.
 | 4. Node | Is each node healthy and caught up? | `NodeUnhealthy`, `NodeFallingBehind`, `NodeSlotStalled`, `NodeVersionMismatch` |
 | 5. Foundation | Is any of this being measured, and is the host fine? | `NodeDown`, `MonitoringTargetDown`, `HostAgentDown`, `HostDiskWillFillSoon`, `HostDiskSpaceLow`, `HostMemoryLow`, `ValidatorServiceRestarting`, `ValidatorServiceNotActive` |
 
-Two severities, page and ticket. Inhibit rules make the cause page and keep its symptoms quiet.
+Three priorities, by what happens if nobody acts:
+
+| Priority | Meaning | Examples |
+|---|---|---|
+| p1 | Page now, at any hour: rewards or reputation are being lost | Identity on two hosts or on none, validator delinquent or not voting, the process dead on the host that runs a staked identity, identity balance nearly empty |
+| p2 | Tell the on-call now, do not wake them: the margin is gone or part of the monitoring is blind | The same process dead on the spare or the RPC node, the disk full within a day, the balance empty within three days, an exporter down |
+| p3 | A ticket for working hours | Skip rate, credits behind the best validator, stake or stake share falling, version mismatch |
+
+The same fault has a different priority on different hosts. Whether a host "runs a staked identity"
+is remembered for ten minutes, because the host that dies takes that information with it; a unit
+test covers exactly that case. Inhibit rules make the cause page and keep its symptoms quiet.
 The stack also watches itself: a dead exporter looks exactly like a quiet system.
 
 The dashboard opens with one table, a row per validator: the host that runs the identity right

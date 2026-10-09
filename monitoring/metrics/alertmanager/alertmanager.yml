@@ -15,15 +15,24 @@ route:
   receiver: default
 
   routes:
+    # p1: page at once and keep reminding.
     - matchers:
-        - severity = "page"
-      receiver: page
+        - severity = "p1"
+      receiver: p1
       group_wait: 10s
       repeat_interval: 1h
 
+    # p2: the on-call sees it now, nobody is woken up.
     - matchers:
-        - severity = "ticket"
-      receiver: ticket
+        - severity = "p2"
+      receiver: p2
+      group_wait: 1m
+      repeat_interval: 4h
+
+    # p3: one ticket a day at most.
+    - matchers:
+        - severity = "p3"
+      receiver: p3
       group_wait: 5m
       repeat_interval: 24h
 
@@ -59,11 +68,15 @@ receivers:
     webhook_configs:
       - url: http://alert-sink:9099/alerts
         send_resolved: true
-  - name: page
+  - name: p1
     webhook_configs:
-      - url: http://alert-sink:9099/alerts?severity=page
+      - url: http://alert-sink:9099/alerts?severity=p1
         send_resolved: true
-  - name: ticket
+  - name: p2
     webhook_configs:
-      - url: http://alert-sink:9099/alerts?severity=ticket
+      - url: http://alert-sink:9099/alerts?severity=p2
+        send_resolved: true
+  - name: p3
+    webhook_configs:
+      - url: http://alert-sink:9099/alerts?severity=p3
         send_resolved: true

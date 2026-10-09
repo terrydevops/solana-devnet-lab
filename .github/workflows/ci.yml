@@ -56,7 +56,7 @@ jobs:
           docker run --rm --entrypoint sh
           -v "$PWD/monitoring/metrics/prometheus:/etc/prometheus:ro"
           prom/prometheus:v3.14.0@sha256:5ce7540c3c00ef4ab0c9d2c995c6a5b9c421f44b4a115d97a2c7af3b1c21cbb0
-          -c 'promtool check rules /etc/prometheus/alerts.yml && promtool test rules /etc/prometheus/tests/identity_test.yml'
+          -c 'promtool check rules /etc/prometheus/alerts.yml && promtool test rules /etc/prometheus/tests/*.yml'
       - name: dashboard matches its generator
         run: |
           python3 monitoring/scripts/build-dashboard.py

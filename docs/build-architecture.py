@@ -96,7 +96,7 @@ MY = 652                                   # top of the monitoring group
 group(40, MY, 1120, 232, "Monitoring stack")
 label(56, MY + 48, "Alert rules in five layers: 1 cluster, 2 validators, 3 funds, 4 nodes, 5 foundation (hosts and the monitoring itself).",
       anchor="start", size=13)
-label(56, MY + 67, "Two severities, page and ticket. The cause pages and its symptoms are inhibited.", anchor="start", size=13)
+label(56, MY + 67, "Three priorities: p1 page now, p2 tell the on-call, p3 ticket. The same fault is p1 on the staked host and p2 on the spare.", anchor="start", size=13)
 box(70, MY + 86, 180, 92, GREY, ["Loki", "validator logs and", "the service journal"])
 box(290, MY + 86, 210, 92, GREY, ["Prometheus", "scrapes every 5 s, 33 rules,", "unit-tested identity alerts"])
 box(540, MY + 86, 190, 92, GREY, ["Alertmanager", "routes by severity,", "inhibits by cause"])

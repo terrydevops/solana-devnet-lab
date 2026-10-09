@@ -244,6 +244,26 @@ skipping` every second and its leader-slot counters stood still. `ValidatorSkipR
 - The failover at 19:41 happened inside the blind period, so its effect on the skip rate was not
   recorded.
 
+### Alert review: from two severities to three priorities, 2026-10-09
+
+Reading all 26 rules in one sitting showed what the two severities hid:
+
+- 15 of 26 rules were "page". A dead validator process paged the same on the staked host, on the
+  hot spare and on the RPC node. Only the first costs rewards. Seven host-level rules are now
+  split by role: p1 on a host that runs a staked identity, p2 elsewhere.
+- That split has a trap: the host that dies takes its exporter with it, and the exporter is what
+  says "this host runs a staked identity". The role is therefore remembered for ten minutes
+  (`solana:host_ran_voting_identity:10m`), and `tests/priority_test.yml` kills both hosts and
+  expects p1 for one and p2 for the other.
+- Two rules were the wrong way round. "Disk full within 24 hours" and "balance empty within 3 days"
+  paged at night for something a day or more away, while "identity balance under 1 SOL", which at
+  1 SOL a day is the last day of voting, was only a ticket. The first two are p2 now, the third p1.
+- `HostDiskWillFillSoon` was firing as a page when this was written, with 16 hours of disk left.
+- Still missing: a runbook link on every rule, an always-firing watchdog to prove the alert path
+  works from outside, and a filter for the per-slot warning that floods the log panels
+  ("Epoch slots can not reuse slot entry": harmless here, caused by 8,192-slot epochs against a
+  50,000-slot window in the validator).
+
 ## Monitoring: tests and findings
 
 Added 2026-10-09: which host runs which identity. Every host's exporter reports the identity it

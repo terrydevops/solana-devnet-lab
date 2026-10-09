@@ -1,0 +1,28 @@
+# The same fault must get a different priority depending on what the host carries.
+# The hard case is the first one: the host that runs the staked identity dies, and its exporter,
+# the only source of "this host runs the staked identity", dies in the same second.
+rule_files: [/etc/prometheus/alerts.yml]
+evaluation_interval: 15s
+tests:
+  - interval: 15s
+    input_series:
+      - series: 'solana_validator_last_vote{nodekey="STAKED", node="rpc"}'
+        values: '1+1x40'
+      # primary: runs the staked identity, then the whole host goes away at 2m
+      - series: 'solana_node_identity{identity="STAKED", node="primary"}'
+        values: '1x8 stale'
+      - series: 'up{job="solana", node="primary"}'
+        values: '1x8 0x32'
+      # spare: runs an unstaked identity, goes away at 2m as well
+      - series: 'solana_node_identity{identity="OTHER", node="spare"}'
+        values: '1x8 stale'
+      - series: 'up{job="solana", node="spare"}'
+        values: '1x8 0x32'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: NodeDown
+        exp_alerts:
+          - exp_labels: { severity: p1, job: solana, node: primary }
+            exp_annotations: { summary: "exporter for node primary is not being scraped (host runs a staked identity)" }
+          - exp_labels: { severity: p2, job: solana, node: spare }
+            exp_annotations: { summary: "exporter for node spare is not being scraped (standby or RPC host: redundancy or service lost, no stake at risk)" }
