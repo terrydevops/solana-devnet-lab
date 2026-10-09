@@ -36,12 +36,17 @@ services:
     image: "${ALERTMANAGER_IMAGE:-prom/alertmanager:v0.34.0}"
     container_name: sol-alertmanager
     restart: unless-stopped
+    # The committed config delivers to the local sink only. scripts/telegram-setup.sh writes a
+    # second config next to it that also sends p1 and p2 to a Telegram chat, and selects it
+    # through ALERTMANAGER_CONFIG in .env. Token and chat id are read from files in ./secrets,
+    # which is not in the repository.
     command:
-      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --config.file=/etc/alertmanager/config/${ALERTMANAGER_CONFIG:-alertmanager.yml}
       - --storage.path=/alertmanager
     ports: ["127.0.0.1:${ALERTMANAGER_PORT:-9193}:9093"]
     volumes:
-      - ./metrics/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - ./metrics/alertmanager:/etc/alertmanager/config:ro
+      - ./secrets:/etc/alertmanager/secrets:ro
       - alertmanager-data:/alertmanager
     networks: [solnet]
     mem_limit: 128m

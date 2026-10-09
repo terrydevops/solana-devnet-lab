@@ -6,3 +6,8 @@ run/
 image/build.log
 __pycache__/
 .DS_Store
+# Local notification setup: token, chat id, and the config generated from them
+monitoring/secrets/*
+!monitoring/secrets/.gitkeep
+monitoring/.env
+monitoring/metrics/alertmanager/alertmanager.local.yml
