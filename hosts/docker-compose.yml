@@ -10,7 +10,9 @@
 name: solhosts
 
 x-host: &host
-  image: geerlingguy/docker-ubuntu2404-ansible:latest
+  # Pinned by digest: the tag is `latest` and moves. Changing this line makes `docker compose up`
+  # recreate the hosts, and their keys and binaries live in the container filesystem.
+  image: geerlingguy/docker-ubuntu2404-ansible@sha256:c2f3d808345896a7a60c6db559c4c9bba872f6d7022bbf56c8e85f07de3d410d
   privileged: true
   cgroup: host
   volumes:

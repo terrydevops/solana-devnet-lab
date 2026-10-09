@@ -21,6 +21,7 @@ it is in [`docs/lab-notes.md`](docs/lab-notes.md).
 | `monitoring/` | Prometheus, Alertmanager, Grafana and Loki; alert rules in five layers; a generated dashboard; a unit test for the identity alerts |
 | `scripts/disk-guard.sh` | Stops the validators before the shared disk is full |
 | `docs/` | Why each signal is monitored, and the lab notes |
+| `.github/` | CI: lint, workflow audit, secret scan, image CVE scan |
 
 The nodes:
 
@@ -131,6 +132,25 @@ Parts:
 | `node_exporter` 1.12.1 with the systemd collector | On every host | role `node_exporter` |
 | Alloy 1.20.1: validator log and `sol.service` journal | On each host that runs a validator | role `alloy` |
 | Prometheus (7 days or 2 GB), Alertmanager, alert sink, Grafana, Loki (48 hours) | `monitoring/docker-compose.yml`, ports on localhost only | `docker compose up -d` |
+
+## CI
+
+`.github/workflows/ci.yml` is a gate, not a deployment pipeline. Nothing is deployed from CI: the
+cluster lives on one machine and Ansible is run from that machine.
+
+| Job | What it checks |
+|---|---|
+| lint | shellcheck, yamllint, actionlint, Python and Node syntax, `ansible-playbook --syntax-check` on every playbook, `promtool check rules` and the alert unit tests, that the committed dashboard matches its generator, that the compose files render, and that every image reference is pinned |
+| zizmor | The workflows themselves: permissions, injection, unpinned actions |
+| secrets | Trivy secret scan, with two extra rules for Solana keypairs (the 64-byte JSON array and the base58 form), which the built-in rules do not match |
+| image scan | Every image the compose files use, listed by a script, scanned for fixable critical CVEs |
+
+Actions are pinned to commit SHAs and tool images to digests; Dependabot moves the pins weekly. The
+workflow token is read-only. An accepted CVE goes into `.trivyignore.yaml` with a reason and an
+expiry date, and the weekly run fails when it expires.
+
+Not covered: the images built here from `image/Dockerfile` and `monitoring/exporter/Dockerfile`
+are not scanned, and their base images are not pinned by digest.
 
 ## Some things running it showed
 

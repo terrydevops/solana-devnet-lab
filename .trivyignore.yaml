@@ -1,0 +1,3 @@
+# Accepted image-scan findings. Each entry needs a reason and an expiry; the
+# weekly run fails once an entry expires, so an acceptance cannot be forgotten.
+vulnerabilities: []

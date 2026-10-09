@@ -1,4 +1,5 @@
-# Unit test for the two identity alerts. The rules file path is the one inside the container:
+# Unit test for the two identity alerts. The rules file path is the one inside the Prometheus
+# container, so mount this directory's parent at /etc/prometheus (CI does) or copy the file in:
 #   docker cp metrics/prometheus/tests/identity_test.yml sol-prometheus:/tmp/ && \
 #   docker exec sol-prometheus promtool test rules /tmp/identity_test.yml
 # A series that disappears from a scrape gets a stale marker in Prometheus; `stale` models that.
