@@ -264,6 +264,23 @@ Reading all 26 rules in one sitting showed what the two severities hid:
   ("Epoch slots can not reuse slot entry": harmless here, caused by 8,192-slot epochs against a
   50,000-slot window in the validator).
 
+### First reading of the SLO row, 2026-10-09 20:35 local
+
+| Identity | Credits 1h | Credits 24h | Leader slots 24h | Not delinquent 24h | Credits budget left |
+|---|---|---|---|---|---|
+| bootstrap | 100% | 100% | 100% | 100% | 100% |
+| validator2's staked identity | 99.99% | 98.68% | 99.60% | 98.74% | -32% |
+
+- The drills are all in there: the 88-second failover of the day before is outside the window,
+  but the stop tests, the two takes of the identity for the alert test, the reset and the 40-second
+  pause at 19:41 are inside. About 18 minutes delinquent in 24 hours against a budget of 86 seconds.
+- The leader-slot figure is too good: the counters stood still for four and a half hours after
+  the reset (see above), so skipped slots in that period are not counted.
+- "The best validator" is the bootstrap validator, which never moved. With two validators the
+  comparison is harsh; on a real network the best of several hundred is the yardstick.
+- On a new series the tiles showed "No data" for the first minutes at a 3-hour range and filled
+  in at 30 minutes. Not looked into further.
+
 ## Monitoring: tests and findings
 
 Added 2026-10-09: which host runs which identity. Every host's exporter reports the identity it

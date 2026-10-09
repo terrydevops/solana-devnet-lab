@@ -433,3 +433,108 @@ groups:
           severity: p2
         annotations:
           summary: "{{ $labels.node }} has under 10% of memory available"
+
+  # ==== service level objectives ===========================================
+  # The layers above say what is broken. These say whether the validator is doing what its
+  # delegators are paid on, measured over time and against a stated target.
+  #
+  #   credits       earn at least 99% of the vote credits the best validator in the cluster earns
+  #   leader slots  produce a block in at least 98% of our leader slots
+  #   voting time   not marked delinquent for at least 99.9% of the time
+  #
+  # The error budget is what the target allows to be lost: 1% of credits, 2% of leader slots,
+  # 0.1% of the time. A burn rate of 1 spends the budget exactly as fast as the target permits.
+  # Alerting uses two windows at once, so a short blip does not page and a slow leak is still
+  # caught: a fast burn is p1, a slow burn a ticket.
+  #
+  # The targets are placeholders for a lab. Real ones come from what the delegators are promised.
+  - name: slo-recording
+    interval: 30s
+    rules:
+      - record: slo:credits:ratio_rate5m
+        expr: >
+          sum by (nodekey) (rate(solana_vote_credits_total[5m]))
+          / scalar(max(sum by (nodekey) (rate(solana_vote_credits_total[5m]))))
+      - record: slo:credits_budget_burn:rate5m
+        expr: (1 - slo:credits:ratio_rate5m) / (1 - 0.99)
+      - record: slo:credits:ratio_rate30m
+        expr: >
+          sum by (nodekey) (rate(solana_vote_credits_total[30m]))
+          / scalar(max(sum by (nodekey) (rate(solana_vote_credits_total[30m]))))
+      - record: slo:credits_budget_burn:rate30m
+        expr: (1 - slo:credits:ratio_rate30m) / (1 - 0.99)
+      - record: slo:credits:ratio_rate1h
+        expr: >
+          sum by (nodekey) (rate(solana_vote_credits_total[1h]))
+          / scalar(max(sum by (nodekey) (rate(solana_vote_credits_total[1h]))))
+      - record: slo:credits_budget_burn:rate1h
+        expr: (1 - slo:credits:ratio_rate1h) / (1 - 0.99)
+      - record: slo:credits:ratio_rate6h
+        expr: >
+          sum by (nodekey) (rate(solana_vote_credits_total[6h]))
+          / scalar(max(sum by (nodekey) (rate(solana_vote_credits_total[6h]))))
+      - record: slo:credits_budget_burn:rate6h
+        expr: (1 - slo:credits:ratio_rate6h) / (1 - 0.99)
+      - record: slo:credits:ratio_rate1d
+        expr: >
+          sum by (nodekey) (rate(solana_vote_credits_total[1d]))
+          / scalar(max(sum by (nodekey) (rate(solana_vote_credits_total[1d]))))
+      - record: slo:credits_budget_burn:rate1d
+        expr: (1 - slo:credits:ratio_rate1d) / (1 - 0.99)
+      - record: slo:leader_slots:ratio_rate1h
+        expr: >
+          sum by (nodekey) (increase(solana_validator_leader_slots_total{status="valid"}[1h]))
+          / clamp_min(sum by (nodekey) (increase(solana_validator_leader_slots_total[1h])), 1)
+      - record: slo:leader_slots_budget_burn:rate1h
+        expr: (1 - slo:leader_slots:ratio_rate1h) / (1 - 0.98)
+      - record: slo:leader_slots:ratio_rate6h
+        expr: >
+          sum by (nodekey) (increase(solana_validator_leader_slots_total{status="valid"}[6h]))
+          / clamp_min(sum by (nodekey) (increase(solana_validator_leader_slots_total[6h])), 1)
+      - record: slo:leader_slots_budget_burn:rate6h
+        expr: (1 - slo:leader_slots:ratio_rate6h) / (1 - 0.98)
+      - record: slo:leader_slots:ratio_rate1d
+        expr: >
+          sum by (nodekey) (increase(solana_validator_leader_slots_total{status="valid"}[1d]))
+          / clamp_min(sum by (nodekey) (increase(solana_validator_leader_slots_total[1d])), 1)
+      - record: slo:leader_slots_budget_burn:rate1d
+        expr: (1 - slo:leader_slots:ratio_rate1d) / (1 - 0.98)
+      - record: slo:voting_time:ratio_1d
+        expr: avg_over_time((1 - max by (nodekey) (solana_validator_delinquent))[1d:1m])
+      # How much of the budget of the last 24 hours is left: 1 = untouched, 0 = spent, below 0 =
+      # the target was missed. A day, not the usual 30: this cluster is reset every day or two.
+      - record: slo:credits_budget_remaining:1d
+        expr: 1 - (1 - slo:credits:ratio_rate1d) / (1 - 0.99)
+      - record: slo:leader_slots_budget_remaining:1d
+        expr: 1 - (1 - slo:leader_slots:ratio_rate1d) / (1 - 0.98)
+      - record: slo:voting_time_budget_remaining:1d
+        expr: 1 - (1 - slo:voting_time:ratio_1d) / (1 - 0.999)
+
+  - name: slo-alerts
+    rules:
+      # 14.4 times too fast: a whole day's budget gone in under two hours.
+      - alert: CreditsBudgetFastBurn
+        expr: slo:credits_budget_burn:rate5m > 14.4 and slo:credits_budget_burn:rate1h > 14.4
+        for: 2m
+        labels:
+          severity: p1
+        annotations:
+          summary: "validator {{ $labels.nodekey }} is spending its vote-credits budget {{ $value | humanize }} times too fast"
+
+      # 6 times too fast over half an hour and over six hours: a steady leak, such as votes
+      # landing late. Never delinquent, never noticed, and paid less every epoch.
+      - alert: CreditsBudgetSlowBurn
+        expr: slo:credits_budget_burn:rate30m > 6 and slo:credits_budget_burn:rate6h > 6
+        for: 15m
+        labels:
+          severity: p3
+        annotations:
+          summary: "validator {{ $labels.nodekey }} has been earning below its 99% credits target for hours"
+
+      - alert: LeaderSlotBudgetBurn
+        expr: slo:leader_slots_budget_burn:rate1h > 6 and slo:leader_slots_budget_burn:rate6h > 6
+        for: 15m
+        labels:
+          severity: p3
+        annotations:
+          summary: "validator {{ $labels.nodekey }} is skipping leader slots {{ $value | humanize }} times faster than its 98% target allows"

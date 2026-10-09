@@ -156,6 +156,35 @@ LAYERS = [
         glance_panel(),
         pair_panel(),
     ]),
+    ("SLO: is each validator earning what its stake should earn? Targets: credits 99% of the best, leader slots 98%, voting time 99.9%", [
+        ("Credits vs the best validator, last hour", "stat", 6, "percentunit",
+         [('slo:credits:ratio_rate1h{nodekey=~"$identity"}', "{{nodekey}}")],
+         "The service level indicator. Target 99%."),
+        ("Credits vs the best validator, last 24 h", "stat", 6, "percentunit",
+         [('slo:credits:ratio_rate1d{nodekey=~"$identity"}', "{{nodekey}}")],
+         "What a delegator would see on a public explorer. Target 99%."),
+        ("Leader slots produced, last 24 h", "stat", 6, "percentunit",
+         [('slo:leader_slots:ratio_rate1d{nodekey=~"$identity"}', "{{nodekey}}")], "Target 98%."),
+        ("Time not delinquent, last 24 h", "stat", 6, "percentunit",
+         [('slo:voting_time:ratio_1d{nodekey=~"$identity"}', "{{nodekey}}")], "Target 99.9%: 86 seconds a day."),
+        ("Error budget left, last 24 h: credits", "stat", 8, "percentunit",
+         [('slo:credits_budget_remaining:1d{nodekey=~"$identity"}', "{{nodekey}}")],
+         "100% = nothing lost, 0% = the allowed 1% is spent, negative = the target was missed."),
+        ("Error budget left, last 24 h: leader slots", "stat", 8, "percentunit",
+         [('slo:leader_slots_budget_remaining:1d{nodekey=~"$identity"}', "{{nodekey}}")], "Budget: 2% of leader slots."),
+        ("Error budget left, last 24 h: voting time", "stat", 8, "percentunit",
+         [('slo:voting_time_budget_remaining:1d{nodekey=~"$identity"}', "{{nodekey}}")], "Budget: 0.1% of the time."),
+        ("Credits burn rate", "timeseries", 12, "none",
+         [('slo:credits_budget_burn:rate5m{nodekey=~"$identity"}', "{{nodekey}} 5m"),
+          ('slo:credits_budget_burn:rate1h{nodekey=~"$identity"}', "{{nodekey}} 1h"),
+          ('slo:credits_budget_burn:rate6h{nodekey=~"$identity"}', "{{nodekey}} 6h")],
+         "1 = spending the budget exactly as fast as the target allows. Above 14.4 on 5m and 1h pages (p1); "
+         "above 6 on 30m and 6h opens a ticket."),
+        ("Credits vs the best validator over time", "timeseries", 12, "percentunit",
+         [('slo:credits:ratio_rate5m{nodekey=~"$identity"}', "{{nodekey}} 5m"),
+          ('slo:credits:ratio_rate1h{nodekey=~"$identity"}', "{{nodekey}} 1h")],
+         "A failover or a restart shows as a dip in the 5m line; the 1h line shows what it cost."),
+    ]),
     ("Layer 1: cluster. Is the chain moving and agreeing?", [
         ("Cluster root slot", "stat", 6, "none",
          [("max(solana_cluster_root_slot)", "root")],
@@ -369,6 +398,16 @@ def build():
             if kind == "stat":
                 panel["options"] = {"reduceOptions": {"calcs": ["lastNotNull"]},
                                     "textMode": "value_and_name", "colorMode": "none"}
+            if kind == "stat" and unit == "percentunit":
+                # SLO tiles: colour by distance from the target; budget tiles by what is left
+                budget = name.startswith("Error budget")
+                steps = ([{"color": "red", "value": None}, {"color": "orange", "value": 0}, {"color": "green", "value": 0.5}]
+                         if budget else
+                         [{"color": "red", "value": None}, {"color": "orange", "value": 0.98}, {"color": "green", "value": 0.99}])
+                panel["fieldConfig"]["defaults"].update({"decimals": 2, "thresholds": {"mode": "absolute", "steps": steps}})
+                panel["fieldConfig"]["defaults"].pop("min", None)
+                panel["options"]["colorMode"] = "value"
+                panel["options"]["graphMode"] = "none"
             panels.append(panel)
             pid += 1
             x += width

@@ -155,6 +155,27 @@ Two dropdowns at the top filter every panel by host and by validator identity. T
 graphs carry the host that runs the identity in their legend, so a failover shows in each of them
 as the line passing from one host to the other.
 
+### Service level objectives
+
+The alert layers say what is broken. The SLO row says whether a validator is doing what its
+delegators are paid on, over time and against a target.
+
+| Objective | Indicator | Target | Error budget |
+|---|---|---|---|
+| Credits | Vote credits earned, as a share of what the best validator in the cluster earned | 99% | 1% of credits |
+| Leader slots | Leader slots in which a block was produced | 98% | 2% of leader slots |
+| Voting time | Time not marked delinquent | 99.9% | 86 seconds a day |
+
+The dashboard shows each indicator, how much of the last 24 hours' budget is left, and the burn
+rate. Alerts use two windows at once: a fast burn (14.4 times too fast over 5 minutes and over an
+hour) is p1, a slow burn (6 times over 30 minutes and over 6 hours) is a ticket. The targets are
+placeholders; real ones come from what delegators are promised. The budget window is a day
+instead of the usual 30 because this cluster is reset every day or two.
+
+On the day it was added the staked identity of `validator2` showed 98.68% of the best validator's
+credits over 24 hours and 98.74% of the time not delinquent: both targets missed, the price of a
+day of stop tests and failover drills. That is what the row is for.
+
 The reasoning behind each signal, with the numbers read off the running stack, is in
 [`docs/monitoring-rationale.md`](docs/monitoring-rationale.md). The dashboard is generated:
 `python3 monitoring/scripts/build-dashboard.py`.
