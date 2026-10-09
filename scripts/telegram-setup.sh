@@ -47,11 +47,23 @@ base, out = sys.argv[1:3]
 s = open(base).read()
 route = '''  routes:
     # p1 and p2 also go to Telegram; `continue` lets the routes below deliver to the sink as well.
+    # One message per alert name, listing the hosts, and few reminders: a chat that keeps
+    # repeating itself gets muted, and then the p1 is missed too.
     - matchers:
-        - severity =~ "p1|p2"
+        - severity = "p1"
       receiver: telegram
+      group_by: ['alertname']
       group_wait: 10s
+      group_interval: 2m
       repeat_interval: 1h
+      continue: true
+    - matchers:
+        - severity = "p2"
+      receiver: telegram
+      group_by: ['alertname']
+      group_wait: 1m
+      group_interval: 10m
+      repeat_interval: 12h
       continue: true
 
 '''
@@ -63,8 +75,8 @@ receiver = '''receivers:
         send_resolved: true
         parse_mode: ""
         message: |-
-          {{ range .Alerts }}[{{ .Status | toUpper }}] {{ .Labels.severity }} {{ .Labels.alertname }}
-          {{ .Annotations.summary }}
+          [{{ .Status | toUpper }}] {{ .CommonLabels.severity }} {{ .CommonLabels.alertname }}{{ if gt (len .Alerts) 1 }} x{{ len .Alerts }}{{ end }}
+          {{ range .Alerts }}- {{ .Annotations.summary }}
           {{ end }}
 '''
 assert "  routes:\n" in s and "receivers:\n" in s
@@ -78,6 +90,8 @@ echo "ALERTMANAGER_CONFIG=alertmanager.local.yml" >> "$env.tmp"
 mv "$env.tmp" "$env"
 
 (cd "$root/monitoring" && docker compose up -d alertmanager >/dev/null)
+# compose leaves a running container alone when only the config file changed: ask it to reload
+curl -fsS -m 10 -X POST "http://127.0.0.1:${ALERTMANAGER_PORT:-9193}/-/reload" >/dev/null
 docker exec sol-alertmanager amtool check-config /etc/alertmanager/config/alertmanager.local.yml >/dev/null
 curl -fsS -m 15 "$api/bot$token/sendMessage" --data-urlencode "chat_id=$chat" \
   --data-urlencode "text=Solana lab: alerts are connected. p1 and p2 will arrive here." >/dev/null

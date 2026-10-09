@@ -353,15 +353,19 @@ groups:
       # systemd restarted the validators for six hours. They read node_exporter on the hosts.
 
       # Solana ledgers grow by the second, so the window is short: hours, not days.
+      # One alert per host and device, not per mount point: three directories on one disk are one
+      # problem, and three notifications for it teach people to stop reading them.
       - alert: HostDiskWillFillSoon
         expr: >
-          predict_linear(node_filesystem_avail_bytes{mountpoint=~"/mnt/(ledger|accounts|snapshots)"}[1h],
-            24 * 3600) < 0
+          min by (node, device) (
+            predict_linear(node_filesystem_avail_bytes{mountpoint=~"/mnt/(ledger|accounts|snapshots)"}[1h],
+              24 * 3600)
+          ) < 0
         for: 15m
         labels:
           severity: p2
         annotations:
-          summary: "{{ $labels.mountpoint }} on {{ $labels.node }} is projected to fill within 24 hours"
+          summary: "disk {{ $labels.device }} on {{ $labels.node }} is projected to fill within 24 hours"
 
       - alert: HostDiskSpaceLow
         expr: >
