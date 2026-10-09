@@ -98,7 +98,7 @@ label(56, MY + 48, "Alert rules in five layers: 1 cluster, 2 validators, 3 funds
       anchor="start", size=13)
 label(56, MY + 67, "Three priorities: p1 page now, p2 tell the on-call, p3 ticket. The same fault is p1 on the staked host and p2 on the spare.", anchor="start", size=13)
 box(70, MY + 86, 180, 92, GREY, ["Loki", "validator logs and", "the service journal"])
-box(290, MY + 86, 210, 92, GREY, ["Prometheus", "scrapes every 5 s, 33 rules,", "unit-tested identity alerts"])
+box(290, MY + 86, 210, 92, GREY, ["Prometheus", "29 alerts in three priorities,", "each with a runbook; unit tests"])
 box(540, MY + 86, 190, 92, GREY, ["Alertmanager", "routes by severity,", "inhibits by cause"])
 box(770, MY + 86, 140, 92, GREY, ["Alert sink", "stands in for a pager,", "counts deliveries"])
 box(950, MY + 86, 180, 92, GREY, ["Grafana", "opens with one row per validator:", "host, stake, balance, days left"])

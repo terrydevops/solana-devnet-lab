@@ -13,7 +13,7 @@
 # The same fault has a different priority on different hosts: a dead validator process is p1 on
 # the host that runs a staked identity and p2 on the hot spare or the RPC node.
 #
-# Every threshold here is a starting value for a two-validator lab with 400 ms slots. On real
+# Every threshold here is a starting value for a two-validator lab. On real
 # hosts they come from a baseline, not from this file.
 
 groups:

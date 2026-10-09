@@ -1,5 +1,7 @@
 # solana-devnet-lab
 
+[![ci](https://github.com/terrydevops/solana-devnet-lab/actions/workflows/ci.yml/badge.svg)](https://github.com/terrydevops/solana-devnet-lab/actions/workflows/ci.yml)
+
 A four-node Solana cluster on one machine, set up and operated the way a validator operator would:
 Linux hosts with systemd, everything on them put there by Ansible, keys separated by role, a hot
 spare with an identity-switch playbook, and a monitoring stack with tested alerts.
@@ -112,6 +114,12 @@ a second; the time until votes land again did not follow, and with over a third 
 one identity the whole cluster waits for it. That share cannot occur on a real network. Why the
 new host needs that long is not yet understood. Details: [lab notes](docs/lab-notes.md).
 
+What three of those switches look like from the monitoring (2026-10-09, times in UTC): the green
+bar is the staked identity passing between `validator2` and `spare`, and under it the vote lag and
+the delinquent mark each switch produced.
+
+![Dashboard: which host runs the voting identity over three hours, with vote lag and delinquency at each switch](docs/img/dashboard-identity-switches.jpg)
+
 This is a planned switch between two healthy hosts. For a primary that cannot be reached, see
 [Not done](#not-done).
 
@@ -217,6 +225,13 @@ Do not recreate the host containers once they are set up: keys and installed bin
 container's own filesystem, only `/mnt/*` is on volumes.
 
 ## Monitoring
+
+![Dashboard: one row per validator, the failover pair side by side, and the SLO row](docs/img/dashboard-operator-view.jpg)
+
+The top of the dashboard on the evening of 2026-10-09: which host runs each identity, what is left
+to pay for votes, the failover pair, and the service level objectives. The orange and red tiles are
+real: that validator had spent the day being stopped and switched.
+
 
 | Layer | Question | Rules |
 |---|---|---|

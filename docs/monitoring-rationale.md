@@ -1,5 +1,9 @@
 # What we monitor on the Solana cluster, and why
 
+**A snapshot of 2026-10-08**, when the cluster had three nodes and two alert severities. The hot
+spare, the identity rules, the three priorities, the SLOs and the runbooks came a day later and
+are described in the README and in `runbooks.md`; the reasoning below still holds.
+
 Each signal: what it measures,
 which failure it is there to catch, what the operator does. Metric names are the ones this
 deployment exports. Every number was read off the running stack on 2026-10-08, on a two-validator
@@ -181,7 +185,7 @@ normal for the length of a rolling upgrade, a mistake after it.
 **This is the alert that was missing on the day the cluster died.** The ledger had no size limit,
 the disk filled, and the validators crashed for six hours.
 
-The rule projects forward instead of waiting for a percentage: `HostDiskWillFillSoon` pages when
+The rule projects forward instead of waiting for a percentage: `HostDiskWillFillSoon` (p2 since the alert review) fires when
 the last hour's trend reaches zero within 24 hours. A Solana ledger grows by the second, so the
 window is hours, where the Ethereum archive node uses days.
 
