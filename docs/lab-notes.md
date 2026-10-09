@@ -381,6 +381,39 @@ link decides; a fenced host that is reconnected by somebody else; the duplicate-
 gossip, which never got the chance to act; and an identity with more than a third of the stake,
 where the cluster cannot finalize past the old host's last vote and step 3 would time out.
 
+### The identity account runs dry, 2026-10-10
+
+The identity account pays 5,000 lamports for every vote. Measured here: about 16,000 lamports a
+second, 1.4 SOL a day. For the drill all but 0.003 SOL was moved to the operator wallet. Times
+are UTC, sampled every five seconds.
+
+| When | What |
+|---|---|
+| 23:23 | Balance moved out. `IdentityBalanceLow` pending at once (under 1 SOL, `for: 10m`) |
+| 23:25:05 | Balance stops at 892,500 lamports. The rent-exempt minimum is 890,880: a fee may not take the account below it, so the last 0.00089 SOL cannot be spent on votes |
+| from then | Votes still land now and then. The balance moved between 892,500 and 897,500: the validator keeps producing its blocks, each earns half the fees of the votes in it, and that pays for the next vote or two |
+| 23:30:20 | `CreditsBudgetFastBurn` (p1) fires, five minutes after the account ran dry. First alert out |
+| 23:31:15 | `ValidatorVoteLagging` (p1) fires, and keeps coming and going |
+| 23:32:22 | Delinquent in `solana validators` for two samples, about ten seconds. `ValidatorDelinquent` never fired |
+| 23:33:30 | `IdentityBalanceLow` (p1) fires, ten minutes after the balance fell under 1 SOL |
+| 23:36:07 | Top-up from the operator wallet. A vote landed within a second; full credit rate about twenty seconds later |
+
+- Vote credits while dry: 4.6 per slot instead of 16, so 29%. Largest distance between the tip
+  and the last vote: 186 slots.
+- Leader slots: 556 in the epoch, none skipped. Producing blocks does not need a balance.
+- The validator log has no error for this. It goes on choosing a bank to vote on every slot; the
+  vote transactions are dropped by the leader because the fee payer cannot pay. On the host
+  everything looks healthy.
+- Nothing had to be restarted, and a switch to the spare would not have helped: both hosts vote
+  from the same account.
+
+What it says about the rules: the balance alert is the one that names the cause, and in this
+drill it was the third to arrive, because the drill went from 100 SOL to nothing in two minutes.
+At 1.4 SOL a day the same threshold gives about seventeen hours. The alert that fired first, the
+credits budget, would have fired with no balance rule at all, and says only that something is
+wrong. A validator with fewer leader slots than this one (9.5% of the stake) would earn fewer
+fees and fall delinquent for good.
+
 ## Monitoring: tests and findings
 
 Added 2026-10-09: which host runs which identity. Every host's exporter reports the identity it

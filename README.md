@@ -357,7 +357,6 @@ Said plainly, because a lab invites the assumption that it covers more than it d
 
 - **An upgrade across versions.** Only one Agave version is built here, so "upgrade the spare, switch,
   upgrade the old primary" has been done as a switch, never with two binaries.
-- **Running out of identity balance.** The alerts exist; the drill has not been run.
 - **Secrets handling.** The withdraw authority and the delegator keys are plain files on the control
   machine. No hardware wallet, no multisig, no encryption at rest.
 - **Host hardening.** The hosts are privileged containers without firewall rules.
@@ -374,6 +373,11 @@ Details and the rest are in the [lab notes](docs/lab-notes.md).
   wait and the two halves each run as one command, 0.43 seconds. That is the gap between two
   commands, not the outage: in the same run votes took about 40 seconds to land again and
   finality paused for the whole cluster, because the identity held 40% of the stake.
+- **An identity account that runs dry does not stop the validator; it starves it.** The balance
+  stops just above the rent-exempt minimum, the validator log shows nothing, and no leader slot is
+  skipped. Each block the validator produces earns enough in fees for a vote or two, so it kept
+  29% of its vote credits and was delinquent for a few seconds in eleven minutes. The SLO burn
+  alert was the first to fire. A top-up was voting again one second later.
 - **`Restart=on-failure` hides a crash loop.** When the disk filled, systemd restarted one service
   4,102 times and everything looked "active". Hence an alert on the restart count.
 - **The ledger limit does not protect a small disk.** The smallest value Agave 4.3 accepts is 100

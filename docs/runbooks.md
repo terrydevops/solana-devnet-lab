@@ -109,8 +109,14 @@ afterwards and has not fired since.
 1. `solana balance <identity>` and the "Days left" column on the dashboard.
 2. Top up from the funding wallet: `solana transfer <identity> <amount>`. Voting resumes by itself.
 
+What an empty account looks like: the balance stands still a little above 0.00089 SOL (the
+rent-exempt minimum; a fee may not take the account below it), the validator log is quiet, blocks
+are still produced, credits fall to a fraction, and `ValidatorVoteLagging` comes and goes. Do not
+restart the validator and do not switch to the spare: the spare would vote from the same account.
+
 Do not use the withdraw authority for this, and do not put it on a host to automate it.
-Exercised: no.
+Exercised: `IdentityBalanceLow` yes (drill of 2026-10-10; recovery one second after the top-up).
+`IdentityBalanceRunningOut` was pending only: its 30 minutes are longer than the drill.
 
 ### ValidatorStakeDropped, ValidatorStakeShareDropped
 
