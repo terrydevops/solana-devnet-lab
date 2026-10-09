@@ -25,18 +25,21 @@ if [ -z "$token" ]; then read -r -s -p "Bot token from @BotFather: " token; echo
 me=$(curl -fsS -m 15 "$api/bot$token/getMe") || { echo "Telegram rejected the token"; exit 1; }
 echo "bot: @$(printf '%s' "$me" | python3 -c 'import sys,json; print(json.load(sys.stdin)["result"]["username"])')"
 
+# Keep the token as soon as Telegram has accepted it, so a second run does not ask again.
+mkdir -p "$secrets"
+umask 077
+printf '%s' "$token" > "$secrets/telegram_token"
+chmod 644 "$secrets/telegram_token"                               # read by the container's own user
+
 chat=$(curl -fsS -m 15 "$api/bot$token/getUpdates" | python3 -c '
 import sys, json
 ids = [u["message"]["chat"]["id"] for u in json.load(sys.stdin)["result"] if "message" in u]
 print(ids[-1] if ids else "")')
-[ -n "$chat" ] || { echo "The bot has no messages yet. Open its chat in Telegram, send it anything, and run this again."; exit 1; }
+[ -n "$chat" ] || { echo "The bot has no messages yet. Open its chat in Telegram, press Start or send it anything, and run this again (the token is saved, it will not be asked for again)."; exit 1; }
 echo "chat id: $chat"
 
-mkdir -p "$secrets"
-umask 077
-printf '%s' "$token" > "$secrets/telegram_token"
 printf '%s' "$chat" > "$secrets/telegram_chat_id"
-chmod 644 "$secrets/telegram_token" "$secrets/telegram_chat_id"   # read by the container's own user
+chmod 644 "$secrets/telegram_chat_id"
 
 python3 - "$base" "$local_cfg" <<'PY'
 import sys
