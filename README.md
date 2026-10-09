@@ -95,6 +95,10 @@ ansible-playbook monitoring.yml
 (cd ../monitoring && docker compose up -d)
 ```
 
+Alerts are delivered to a local sink that only logs them, so nothing reaches a person by itself.
+`scripts/alerts-watch.sh` follows that log in a terminal and raises a desktop notification for
+each p1 and p2.
+
 Grafana is at http://127.0.0.1:3100 (`admin` / `admin`, bound to localhost), Prometheus at
 http://127.0.0.1:9190, Alertmanager at http://127.0.0.1:9193.
 
