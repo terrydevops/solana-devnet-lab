@@ -181,7 +181,9 @@ Details and the rest are in the [lab notes](docs/lab-notes.md).
   identity but not the key that signs votes, and the first success check was satisfied by the old
   host's last votes. The spare did not vote for 88 seconds; the monitoring noticed, the playbook
   did not. After the fix a switch left the identity unheld for under two seconds; with the window
-  wait and the two halves each run as one command, 0.43 seconds.
+  wait and the two halves each run as one command, 0.43 seconds. That is the gap between two
+  commands, not the outage: in the same run votes took about 40 seconds to land again and
+  finality paused for the whole cluster, because the identity held 40% of the stake.
 - **`Restart=on-failure` hides a crash loop.** When the disk filled, systemd restarted one service
   4,102 times and everything looked "active". Hence an alert on the restart count.
 - **The ledger limit does not protect a small disk.** The smallest value Agave 4.3 accepts is 100

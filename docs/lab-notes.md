@@ -210,7 +210,17 @@ account. The validator did nothing and holds none of those keys.
 - **Fewer commands in the gap.** The window wait and "let go" are one command on the old host;
   writing the tower, checking its sha256 and "take over" are one command on the new host.
 - **Run of 19:41 local, validator2 to spare:** waited 47 slots for a 20-slot window, then
-  **0.43 s with no holder** (1.7 to 2.0 s before), and no leader slot fell into the switch.
+  **0.43 s with no holder** (1.7 to 2.0 s before).
+- **That number is not the whole cost.** The dashboard shows what the playbook's summary does not:
+  from 08:41:35 to 08:42:25 UTC the finalized slot of the whole cluster stood still (about 50 s),
+  the identity's last vote did not move for about 40 s, `ValidatorVoteLagging` paged at 78 slots
+  behind and the delinquent mark showed briefly. The verify step needed 28 polls, close to a
+  minute, where earlier runs needed a few seconds. The identity held about 40% of the stake at
+  that moment, so while its votes were missing nothing could be finalized. Why the new host took
+  that long to land votes again is not established (lockouts after a short fork are a guess).
+  Earlier switches, at 9% and 33% of stake, showed no such stall. Two lessons: report the time
+  until votes land again, not the time between two commands; and a validator with more than a
+  third of the stake cannot be switched without the cluster noticing.
 - **Abort path, tested:** asked for an impossible window; the run timed out, gave the identity
   back to the old host and failed with the reason. The cluster did not change.
 - **Not tested:** a takeover that fails after the old host has let go. The rescue is the same

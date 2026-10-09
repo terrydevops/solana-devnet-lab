@@ -1839,7 +1839,8 @@
             "uid": "loki"
           }
         }
-      ]
+      ],
+      "interval": "30s"
     },
     {
       "id": 41,
@@ -1872,13 +1873,14 @@
             "uid": "loki"
           }
         }
-      ]
+      ],
+      "interval": "30s"
     },
     {
       "id": 42,
       "type": "logs",
-      "title": "Errors",
-      "description": "",
+      "title": "Latest warnings and errors",
+      "description": "The lines behind the graph above. An empty panel here is good news.",
       "datasource": {
         "type": "loki",
         "uid": "loki"
@@ -1898,7 +1900,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "{job=\"solana-validator\", level=\"ERROR\"}",
+          "expr": "{job=\"solana-validator\", level=~\"WARN|ERROR\"}",
           "legendFormat": "",
           "datasource": {
             "type": "loki",
@@ -1938,7 +1940,8 @@
             "uid": "loki"
           }
         }
-      ]
+      ],
+      "timeFrom": "24h"
     }
   ]
 }

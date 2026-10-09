@@ -197,8 +197,9 @@ LAYERS = [
         ("Log lines per second", "timeseries", 12, "none",
          [('sum by (node) (rate({job="solana-validator"}[1m]))', "{{node}}")],
          "A validator that stops logging has stopped.", LOKI),
-        ("Errors", "logs", 24, "none",
-         [('{job="solana-validator", level="ERROR"}', "")], "", LOKI),
+        ("Latest warnings and errors", "logs", 24, "none",
+         [('{job="solana-validator", level=~"WARN|ERROR"}', "")],
+         "The lines behind the graph above. An empty panel here is good news.", LOKI),
         ("systemd journal of sol.service", "logs", 24, "none",
          [('{job="systemd"}', "")],
          "What the start script printed before the validator opened its own log.", LOKI),
@@ -251,6 +252,12 @@ def build():
                 panel["fieldConfig"]["defaults"]["color"] = {"mode": "fixed", "fixedColor": "gray"}
                 panel["options"] = {"showValue": "always", "mergeValues": True, "rowHeight": 0.8,
                                     "legend": {"showLegend": False}}
+            if ds is LOKI and kind == "timeseries":
+                panel["interval"] = "30s"       # a log query per 15 s step is slow for no gain
+            if kind == "logs" and "journal" in name:
+                # The journal only speaks when a service starts or dies: look back a day, or the
+                # panel is empty whenever nothing has happened in the dashboard's time range.
+                panel["timeFrom"] = "24h"
             if kind == "stat":
                 panel["options"] = {"reduceOptions": {"calcs": ["lastNotNull"]},
                                     "textMode": "value_and_name", "colorMode": "none"}
