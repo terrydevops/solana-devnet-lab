@@ -7,7 +7,7 @@ import pathlib
 from xml.sax.saxutils import escape as esc
 
 OUT = pathlib.Path(__file__).resolve().parent / "architecture.svg"
-W, H = 1200, 800
+W, H = 1200, 862
 GREEN, YELLOW, BLUE = ("#d5e8d4", "#82b366"), ("#fff2cc", "#d6b656"), ("#dae8fc", "#6c8ebf")
 GREY, RED = ("#f0f0f0", "#888888"), ("#f8cecc", "#b85450")
 
@@ -87,18 +87,29 @@ arrow(1005, 196, 1005, 296)
 label(800, 188, "RPC on 127.0.0.1:8999")
 
 # ---- monitoring ---------------------------------------------------------------------------
-group(40, 606, 1120, 170, "Monitoring stack")
-box(70, 652, 180, 100, GREY, ["Loki", "validator logs and", "the service journal"])
-box(300, 652, 200, 100, GREY, ["Prometheus", "32 rules in five layers,", "unit-tested identity alerts"])
-box(550, 652, 200, 100, GREY, ["Alertmanager", "page / ticket,", "inhibition by cause"])
-box(800, 652, 140, 100, GREY, ["Alert sink", "counts what", "was delivered"])
-box(990, 652, 140, 100, GREY, ["Grafana", "dashboards from", "Prometheus and Loki"])
-arrow(500, 702, 550, 702)
-arrow(750, 702, 800, 702)
+group(40, 606, 1120, 232, "Monitoring stack")
+label(56, 654, "Alert rules in five layers: 1 cluster, 2 validators, 3 funds, 4 nodes, 5 foundation (hosts and the monitoring itself).",
+      anchor="start", size=13)
+label(56, 673, "Two severities, page and ticket. The cause pages and its symptoms are inhibited.", anchor="start", size=13)
+box(70, 692, 180, 92, GREY, ["Loki", "validator logs and", "the service journal"])
+box(290, 692, 210, 92, GREY, ["Prometheus", "scrapes every 5 s, 32 rules,", "unit-tested identity alerts"])
+box(540, 692, 190, 92, GREY, ["Alertmanager", "routes by severity,", "inhibits by cause"])
+box(770, 692, 140, 92, GREY, ["Alert sink", "stands in for a pager,", "counts deliveries"])
+box(950, 692, 180, 92, GREY, ["Grafana", "one dashboard, generated,", "same five layers plus logs"])
+arrow(500, 738, 540, 738)
+arrow(730, 738, 770, 738)
+label(520, 730, "fires", size=11.5)
+label(750, 730, "notifies", size=11.5)
+# Grafana reads both stores: a bus under the row
+for x in (160, 395):
+    o.append(f'<line x1="{x}" y1="784" x2="{x}" y2="812" stroke="#444" stroke-width="1.8"/>')
+o.append('<line x1="160" y1="812" x2="1040" y2="812" stroke="#444" stroke-width="1.8"/>')
+arrow(1040, 812, 1040, 784)
+label(700, 829, "queried by Grafana", size=12)
 arrow(160, 536, 160, 606)
-label(172, 576, "logs (Alloy)", anchor="start")
-arrow(400, 536, 400, 606)
-label(412, 576, "metrics: node, chain, vote credits", anchor="start")
+label(172, 576, "logs: Alloy ships WARN and ERROR in full, INFO sampled", anchor="start")
+arrow(700, 536, 700, 606)
+label(712, 576, "metrics: node_exporter, solana-exporter, vote credits", anchor="start")
 
 o.append("</svg>")
 OUT.write_text("\n".join(o) + "\n")
