@@ -9,51 +9,7 @@ it is in [`docs/lab-notes.md`](docs/lab-notes.md).
 
 ## Architecture
 
-```mermaid
-flowchart TB
-  subgraph control["Control machine"]
-    direction LR
-    ansible["Ansible playbooks"]
-    cli["solana CLI"]
-    keys["Keys that never reach a host:<br/>withdraw authority of the vote account,<br/>delegator wallets and stake accounts"]
-  end
-
-  subgraph cluster["Docker network 172.30.0.0/24 : four systemd hosts, each with ledger / accounts / snapshots volumes"]
-    direction LR
-    bootstrap["<b>bootstrap</b> .11<br/>genesis validator<br/>votes, produces blocks"]
-    validator2["<b>validator2</b> .12<br/>staked identity<br/>votes, produces blocks"]
-    spare["<b>spare</b> .14<br/>hot spare<br/>unstaked identity, follows the chain"]
-    rpc["<b>rpc</b> .13<br/>non-voting<br/>transaction history"]
-    bootstrap <-->|"gossip, blocks, votes"| validator2
-    validator2 <-.->|"identity switch<br/>failover.yml"| spare
-    bootstrap <--> rpc
-  end
-
-  subgraph monitoring["Monitoring stack"]
-    direction LR
-    prometheus["Prometheus<br/>32 rules"] --> alertmanager["Alertmanager<br/>page / ticket, inhibition"] --> sink["alert sink"]
-    loki["Loki"]
-    grafana["Grafana"]
-    prometheus --> grafana
-    loki --> grafana
-  end
-
-  ansible ==>|"configures every host"| cluster
-  cli -->|"RPC on 127.0.0.1:8999"| rpc
-  keys -.->|"signs stake and vote-account changes"| cli
-  cluster ==>|"metrics: node_exporter, solana-exporter, vote credits"| prometheus
-  cluster ==>|"logs: Alloy"| loki
-
-  classDef voting fill:#d5e8d4,stroke:#82b366,color:#000
-  classDef standby fill:#fff2cc,stroke:#d6b656,color:#000
-  classDef readonly fill:#dae8fc,stroke:#6c8ebf,color:#000
-  class bootstrap,validator2 voting
-  class spare standby
-  class rpc readonly
-```
-
-Green hosts vote, the yellow one stands by with an unstaked identity, the blue one only serves
-data. The staked identity of `validator2` can move to `spare` and back without a restart.
+![Architecture: a control machine, four systemd hosts and a monitoring stack](docs/architecture.svg)
 
 ## What is in it
 
