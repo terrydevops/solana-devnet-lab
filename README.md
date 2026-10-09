@@ -11,7 +11,7 @@ it is in [`docs/lab-notes.md`](docs/lab-notes.md).
 
 | If you care about | Read |
 |---|---|
-| How an identity moves between two hosts without both ever voting | [`ansible/failover.yml`](ansible/failover.yml), with the drill results in the [lab notes](docs/lab-notes.md) |
+| How an identity moves between two hosts without both ever voting | [The identity switch](#the-identity-switch) below, [`ansible/failover.yml`](ansible/failover.yml), and the [lab notes](docs/lab-notes.md) |
 | Who holds which key, and what root on the hosts can and cannot do | [`docs/keys-and-access.md`](docs/keys-and-access.md), including the safeguards against double voting on Agave and Firedancer |
 | What gets paged, what waits, and what to do when it fires | [`alerts.yml`](monitoring/metrics/prometheus/alerts.yml) and [`docs/runbooks.md`](docs/runbooks.md) |
 | Why each signal is watched | [`docs/monitoring-rationale.md`](docs/monitoring-rationale.md) |
@@ -35,6 +35,85 @@ its stake and its keys come from the genesis ceremony and its authorities sit on
 identity, which no real operator would accept.
 
 The diagram is generated: `python3 docs/build-architecture.py`.
+
+## The identity switch
+
+The drill this lab was built around: move a staked identity from the primary to the hot spare
+and back, without restarting either host and without both ever being able to vote.
+
+```bash
+scripts/failover.sh --check      # where the pair stands; changes nothing
+scripts/failover.sh              # switch to whichever host is the standby right now
+scripts/failover.sh validator2 spare      # or name both hosts yourself
+```
+
+Without host names it asks both hosts which identity they run, and switches only if exactly one
+holds the staked identity and the other is running and caught up:
+
+```
+$ scripts/failover.sh --check
+  validator2   standby  runs bcYshZL4..., 0 slots behind, service active
+  spare        ACTIVE   runs the staked identity, 0 slots behind, service active
+  the standby is ready: a switch would go spare -> validator2
+```
+
+If the standby is not ready it says why and stops. If both hosts run the staked identity, or
+neither does, it stops and says that a person has to decide.
+
+A real run (2026-10-09, spare to validator2; times removed):
+
+```
+$ scripts/failover.sh
+preflight: both hosts hold the same staked key ...  ok
+preflight: the old host holds the staked identity, the new host does not ...  ok
+preflight: both hosts run the same version ...  ok
+preflight: the new host is caught up ...  ok
+preflight: the new host can sign votes for the identity ...  ok
+0 + 1. wait for a window without leader slots, then the old host lets go ...  changed
+2 + 3. the tower arrives and is verified, then the new host takes over ...  changed
+4. identity.json follows the new roles ...  changed
+verify: the identity has voted on a slot produced after the switch ...  ok
+verify: the identity is on the new host and on no other ...  ok
+
+  identity 6vj8f89J... moved spare -> validator2
+  window: slot 99016, next leader slot 99036, 20 slots idle (wanted 20, waited 45 slots)
+  nobody held the identity for 0.48 seconds
+  tower: tower-1_9-6vj8f89J....bin, sha256 dedf54d6043d652e..., verified on validator2
+  cluster tip at the takeover 99017, the identity has now voted on 99215
+```
+
+The switch itself is two calls to the validator's own `set-identity`, in the order the Anza
+failover guide gives. Around them the playbook ([`ansible/failover.yml`](ansible/failover.yml)) adds:
+
+| Step | What | Why |
+|---|---|---|
+| preflight | Same staked key on both hosts, roles as expected, same version, standby caught up, vote-signing key loaded | A switch should fail before it starts, not in the middle |
+| 0 | Wait for a gap in the leader schedule ([`wait-for-leader-gap.py`](ansible/files/wait-for-leader-gap.py)) | `wait-for-restart-window` counts in minutes; a validator with a large share never gets one |
+| 1 | The old host lets go: `set-identity` to its unstaked key | The old host first, always: never two hosts on one identity |
+| 2 | The tower file moves, with a sha256 check | The record of what this identity has voted for |
+| 3 | The new host takes over: `set-identity --require-tower` | Refused without the tower |
+| 4 | `identity.json` follows on both hosts | What each host is after a restart |
+| rollback | If step 3 fails, the old host takes the identity back | Otherwise nobody holds it |
+| verify | The identity has voted on a slot produced after the switch, and runs on the new host only | "The command returned 0" is not proof |
+
+What the runs measured:
+
+| Run | Share of stake | No holder for | What it cost |
+|---|---|---|---|
+| 2026-10-08, first | about 10% | 1.92 s | The spare could not sign votes for 88 s: the vote-signing key was not loaded. The playbook said "success" |
+| 2026-10-08, fixed | about 10% | 2.01 s | 4 leader slots skipped, no alert |
+| 2026-10-09 13:17 | 33% | 1.72 s | Not measured |
+| 2026-10-09 19:41 | 40% | 0.43 s | Votes took about 40 s to land again; finality paused cluster-wide for about 50 s |
+| 2026-10-09 21:18 | about 45% | 0.43 s | Waited 508 slots for a 20-slot gap; vote lag paged at 92 slots |
+| 2026-10-09 22:24 | about 45% | 0.48 s | 128 of the identity's 510 leader slots in that epoch skipped |
+
+The last rows are the honest ones. The time between the two commands went from two seconds to half
+a second; the time until votes land again did not follow, and with over a third of the stake on
+one identity the whole cluster waits for it. That share cannot occur on a real network. Why the
+new host needs that long is not yet understood. Details: [lab notes](docs/lab-notes.md).
+
+This is a planned switch between two healthy hosts. For a primary that cannot be reached, see
+[Not done](#not-done).
 
 ## What is in it
 
