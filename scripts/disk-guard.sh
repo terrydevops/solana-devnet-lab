@@ -2,7 +2,7 @@
 # Lab safety net: stop the validators before the shared Docker disk is full.
 #
 # The ledger of this cluster grows by several GB per hour and --limit-blockstore-size cannot go
-# low enough to cap it (README, incident 2026-10-08). Until the host disk alert exists, this loop
+# low enough to cap it (docs/lab-notes.md, incident 2026-10-08). Until the host disk alert exists, this loop
 # does the one thing a person would do: stop the services while there is still room to work.
 #
 #   scripts/disk-guard.sh &          # stops the cluster when free space drops under 15 GB

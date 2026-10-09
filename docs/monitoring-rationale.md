@@ -18,7 +18,7 @@ lab cluster; none of them says anything about mainnet.
 Alerting runs top-down: page for the cause, stay quiet about the symptoms (inhibit rules).
 Diagnosis runs bottom-up: trust the foundation before believing the chain.
 
-On the Ethereum stack layer 3 was "signing" (web3signer). Here it is "funds": a Solana validator
+On an Ethereum validator stack this layer would be "signing" (the remote signer). Here it is "funds": a Solana validator
 pays a fee for every vote, an Ethereum validator pays nothing to attest.
 
 Where the numbers come from:

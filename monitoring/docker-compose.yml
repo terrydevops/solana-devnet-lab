@@ -3,11 +3,11 @@
 # server would. The agents themselves (node_exporter, the chain exporters) are installed on the
 # hosts by Ansible: ../ansible/monitoring.yml.
 #
-# Same shape as eth-docker-practice/monitoring. Host ports are in the 9190 / 9193 / 3100 range so
-# both stacks can run side by side (the Ethereum one uses 9091, 9093 and 3001 on this machine).
+# Host ports are in the 9190 / 9193 / 3100 range to stay clear of another monitoring stack on the
+# same machine.
 #
 # Retention is capped by size as well as time. The disk of this machine filled once already
-# (README, incident 2026-10-08); the monitoring stack must not be the next thing to fill it.
+# (docs/lab-notes.md, incident 2026-10-08); the monitoring stack must not be the next thing to fill it.
 name: solmon
 
 services:
@@ -47,7 +47,7 @@ services:
     mem_limit: 128m
 
   # Stands in for Slack or PagerDuty: logs every notification and counts them, so the delivery
-  # path itself can be watched. Copied unchanged from eth-docker-practice.
+  # path itself can be watched.
   alert-sink:
     image: "${NODE_IMAGE:-node:26.8.1-alpine}"
     container_name: sol-alert-sink
