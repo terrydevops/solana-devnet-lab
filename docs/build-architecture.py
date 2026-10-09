@@ -7,7 +7,7 @@ import pathlib
 from xml.sax.saxutils import escape as esc
 
 OUT = pathlib.Path(__file__).resolve().parent / "architecture.svg"
-W, H = 1200, 862
+W, H = 1200, 908
 GREEN, YELLOW, BLUE = ("#d5e8d4", "#82b366"), ("#fff2cc", "#d6b656"), ("#dae8fc", "#6c8ebf")
 GREY, RED = ("#f0f0f0", "#888888"), ("#f8cecc", "#b85450")
 
@@ -56,27 +56,32 @@ arrow(830, 104, 750, 104, dashed=True)
 label(790, 96, "signs", size=12)
 
 # ---- cluster ------------------------------------------------------------------------------
-group(40, 232, 1120, 304, "Docker network 172.30.0.0/24: four systemd hosts, each with ledger / accounts / snapshots volumes")
+group(40, 232, 1120, 350, "Docker network 172.30.0.0/24: four systemd hosts, each with ledger / accounts / snapshots volumes")
 HOSTS = [
-    (70, GREEN, ["bootstrap  .11", "validator; started the chain", "stake from genesis",
+    (70, GREEN, ["bootstrap  .11", "genesis validator, no spare", "10,000 SOL of stake written into genesis",
                  "syncs, votes, produces blocks"]),
-    (340, GREEN, ["validator2  .12", "validator; joined later", "stake delegated by delegators",
+    (340, GREEN, ["validator2  .12", "joined later; primary", "stake delegated by three delegators",
                   "syncs, votes, produces blocks"]),
-    (610, YELLOW, ["spare  .14", "hot spare for validator2", "unstaked identity, no stake",
+    (610, YELLOW, ["spare  .14", "hot spare for validator2", "unstaked identity until a switch",
                    "syncs only"]),
     (880, BLUE, ["rpc  .13", "RPC node", "keeps transaction history",
                  "syncs only, answers queries"]),
 ]
+# the pair that is operated like a production validator
+o.append('<rect x="330" y="290" width="540" height="120" rx="12" fill="none" stroke="#6c8ebf" stroke-width="2" stroke-dasharray="8 5"/>')
 for x, colours, lines in HOSTS:
     box(x, 296, 250, 108, colours, lines, emphasis=(3,))
-label(330, 288, "blocks, votes")
+label(330, 284, "blocks, votes")
 arrow(320, 350, 340, 350, both=True)
-label(600, 288, "identity switch")
+label(600, 284, "identity switch")
 arrow(590, 350, 610, 350, both=True, dashed=True)
-label(600, 434, "All four run the same agave-validator binary as a systemd service, and all four sync the chain:", size=13)
-label(600, 453, "they gossip with each other, receive every block, replay it and store it. Start-up flags decide the rest.", size=13)
-label(600, 482, "Voting costs a fee per slot and needs a funded identity. The spare and the RPC node do not vote, so they cost nothing on chain.", size=13)
-label(600, 511, "On every host: node_exporter, solana-exporter and Alloy, also as systemd services.", size=13)
+label(195, 428, "stands in for the rest of the network", size=12.5)
+label(600, 428, "the validator we operate: withdraw authority offline, hot spare, scripts/failover.sh", size=12.5)
+label(600, 462, "All four run the same agave-validator binary as a systemd service, and all four sync the chain:", size=13)
+label(600, 481, "they gossip with each other, receive every block, replay it and store it. Start-up flags decide the rest.", size=13)
+label(600, 510, "Voting costs a fee per slot and needs a funded identity. The spare and the RPC node do not vote, so they cost nothing on chain.", size=13)
+label(600, 539, "A switch waits for a gap in the leader schedule, moves the tower file with a checksum, and rolls back a failed takeover.", size=13)
+label(600, 564, "On every host: node_exporter, solana-exporter and Alloy, also as systemd services.", size=13)
 
 # ---- control -> cluster -------------------------------------------------------------------
 arrow(220, 146, 220, 232)
@@ -87,29 +92,30 @@ arrow(1005, 196, 1005, 296)
 label(800, 188, "RPC on 127.0.0.1:8999")
 
 # ---- monitoring ---------------------------------------------------------------------------
-group(40, 606, 1120, 232, "Monitoring stack")
-label(56, 654, "Alert rules in five layers: 1 cluster, 2 validators, 3 funds, 4 nodes, 5 foundation (hosts and the monitoring itself).",
+MY = 652                                   # top of the monitoring group
+group(40, MY, 1120, 232, "Monitoring stack")
+label(56, MY + 48, "Alert rules in five layers: 1 cluster, 2 validators, 3 funds, 4 nodes, 5 foundation (hosts and the monitoring itself).",
       anchor="start", size=13)
-label(56, 673, "Two severities, page and ticket. The cause pages and its symptoms are inhibited.", anchor="start", size=13)
-box(70, 692, 180, 92, GREY, ["Loki", "validator logs and", "the service journal"])
-box(290, 692, 210, 92, GREY, ["Prometheus", "scrapes every 5 s, 32 rules,", "unit-tested identity alerts"])
-box(540, 692, 190, 92, GREY, ["Alertmanager", "routes by severity,", "inhibits by cause"])
-box(770, 692, 140, 92, GREY, ["Alert sink", "stands in for a pager,", "counts deliveries"])
-box(950, 692, 180, 92, GREY, ["Grafana", "one dashboard, generated,", "same five layers plus logs"])
-arrow(500, 738, 540, 738)
-arrow(730, 738, 770, 738)
-label(520, 730, "fires", size=11.5)
-label(750, 730, "notifies", size=11.5)
+label(56, MY + 67, "Two severities, page and ticket. The cause pages and its symptoms are inhibited.", anchor="start", size=13)
+box(70, MY + 86, 180, 92, GREY, ["Loki", "validator logs and", "the service journal"])
+box(290, MY + 86, 210, 92, GREY, ["Prometheus", "scrapes every 5 s, 33 rules,", "unit-tested identity alerts"])
+box(540, MY + 86, 190, 92, GREY, ["Alertmanager", "routes by severity,", "inhibits by cause"])
+box(770, MY + 86, 140, 92, GREY, ["Alert sink", "stands in for a pager,", "counts deliveries"])
+box(950, MY + 86, 180, 92, GREY, ["Grafana", "opens with one row per validator:", "host, stake, balance, days left"])
+arrow(500, MY + 132, 540, MY + 132)
+arrow(730, MY + 132, 770, MY + 132)
+label(520, MY + 124, "fires", size=11.5)
+label(750, MY + 124, "notifies", size=11.5)
 # Grafana reads both stores: a bus under the row
 for x in (160, 395):
-    o.append(f'<line x1="{x}" y1="784" x2="{x}" y2="812" stroke="#444" stroke-width="1.8"/>')
-o.append('<line x1="160" y1="812" x2="1040" y2="812" stroke="#444" stroke-width="1.8"/>')
-arrow(1040, 812, 1040, 784)
-label(700, 829, "queried by Grafana", size=12)
-arrow(160, 536, 160, 606)
-label(172, 576, "logs: Alloy ships WARN and ERROR in full, INFO sampled", anchor="start")
-arrow(700, 536, 700, 606)
-label(712, 576, "metrics: node_exporter, solana-exporter, vote credits", anchor="start")
+    o.append(f'<line x1="{x}" y1="{MY + 178}" x2="{x}" y2="{MY + 206}" stroke="#444" stroke-width="1.8"/>')
+o.append(f'<line x1="160" y1="{MY + 206}" x2="1040" y2="{MY + 206}" stroke="#444" stroke-width="1.8"/>')
+arrow(1040, MY + 206, 1040, MY + 178)
+label(700, MY + 223, "queried by Grafana", size=12)
+arrow(160, 582, 160, MY)
+label(172, 622, "logs: Alloy ships WARN and ERROR in full, INFO sampled", anchor="start")
+arrow(700, 582, 700, MY)
+label(712, 622, "metrics: node_exporter, solana-exporter, vote credits", anchor="start")
 
 o.append("</svg>")
 OUT.write_text("\n".join(o) + "\n")

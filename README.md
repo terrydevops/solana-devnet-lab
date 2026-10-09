@@ -15,10 +15,14 @@ All four nodes sync the chain. Only two of them are validators:
 
 | Host | Syncs | Votes | Has stake | Produces blocks | Also |
 |---|---|---|---|---|---|
-| `bootstrap` | yes | yes | yes, from genesis | yes | Started the chain; the others join through it |
-| `validator2` | yes | yes | yes, delegated | yes | Primary of the failover pair |
+| `bootstrap` | yes | yes | yes, 10,000 SOL written into genesis | yes | Started the chain and stands in for the rest of the network. No spare: if it stops, the chain stops |
+| `validator2` | yes | yes | yes, delegated by three delegator wallets | yes | The validator operated the production way: withdraw authority offline, hot spare, failover |
 | `spare` | yes | no | no | no | Ready to take over validator2's identity |
 | `rpc` | yes | no | no | no | Keeps transaction history, answers queries |
+
+Only `validator2` and `spare` are run like a production validator. `bootstrap` is a simplification:
+its stake and its keys come from the genesis ceremony and its authorities sit on its own online
+identity, which no real operator would accept.
 
 The diagram is generated: `python3 docs/build-architecture.py`.
 
