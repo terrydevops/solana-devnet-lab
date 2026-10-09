@@ -77,7 +77,7 @@ receiver = '''receivers:
         message: |-
           [{{ .Status | toUpper }}] {{ .CommonLabels.severity }} {{ .CommonLabels.alertname }}{{ if gt (len .Alerts) 1 }} x{{ len .Alerts }}{{ end }}
           {{ range .Alerts }}- {{ .Annotations.summary }}
-          {{ end }}
+          {{ end }}{{ (index .Alerts 0).Annotations.runbook }}
 '''
 assert "  routes:\n" in s and "receivers:\n" in s
 s = s.replace("  routes:\n", route, 1).replace("receivers:\n", receiver, 1)

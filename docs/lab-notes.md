@@ -310,6 +310,38 @@ and the chain kept finalizing. Stopped for 301 seconds, then started.
 - Not done: a stop long enough that the local snapshot is too old and a download is needed; the
   same drill on the host that holds the staked identity.
 
+### Two more switches, and the first time the cost in leader slots was counted, 2026-10-09 night
+
+With `scripts/failover.sh` (no arguments: it finds the active host itself) the identity went back
+to validator2 at 21:18 and was switched again at 22:24. The identity held about 45% of the stake by
+then.
+
+- 21:18: the wait for a 20-slot gap took 508 slots, about two minutes. The more stake a validator
+  has, the rarer the gaps. 0.43 s between the two commands; `ValidatorVoteLagging` paged at 92
+  slots behind.
+- 22:24: the leader-slot counters were working again, so this is the first switch with a number:
+  **128 of the identity's 510 leader slots in that epoch were skipped**, all within two minutes of
+  the switch. The bootstrap validator skipped none.
+- So the window covers the switch and not what follows it. When the new host needs tens of seconds
+  before its votes land, every leader slot in that time is lost as well, and a validator with
+  nearly half the stake has one every few seconds. On a network where no validator comes near a
+  third, the stall would not happen; the open question is why the new host needs that long.
+
+### A warning on every slot, then an error on every slot, 2026-10-09
+
+- From the first minutes of a chain: `WARN Epoch slots can not reuse slot entry for slot N since
+  stakes for epoch E are not available`, once per slot, with N about 50,000 slots ahead of the tip.
+  The validator keeps a window of the next 50,000 slots (`CLUSTER_SLOTS_TRIM_SIZE` in
+  `core/src/cluster_slots_service/cluster_slots.rs`). With 8,192-slot epochs that reaches six
+  epochs ahead, where stakes are not known, so the entry is created empty.
+- About 50,000 slots later the chain arrives at those entries, and gossip updates for them fail:
+  `ERROR Unexpected pubkey ... for slot N!`, several per second on every node that has been up that
+  long. A node restarted in between logs none.
+- Harmless here as far as observed: the structure tracks which node has which slot, and votes,
+  roots and credits were unaffected. With mainnet's 432,000-slot epochs the window stays inside
+  known epochs. But it fills the WARN and ERROR panels, so a real error would be hard to see.
+  Not filtered yet.
+
 ## Monitoring: tests and findings
 
 Added 2026-10-09: which host runs which identity. Every host's exporter reports the identity it

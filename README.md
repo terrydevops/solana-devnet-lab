@@ -7,6 +7,16 @@ spare with an identity-switch playbook, and a monitoring stack with tested alert
 It is a lab for practising operations, not a way to run a validator. What was learned from running
 it is in [`docs/lab-notes.md`](docs/lab-notes.md).
 
+## Where to look first
+
+| If you care about | Read |
+|---|---|
+| How an identity moves between two hosts without both ever voting | [`ansible/failover.yml`](ansible/failover.yml), with the drill results in the [lab notes](docs/lab-notes.md) |
+| Who holds which key, and what root on the hosts can and cannot do | [`docs/keys-and-access.md`](docs/keys-and-access.md), including the safeguards against double voting on Agave and Firedancer |
+| What gets paged, what waits, and what to do when it fires | [`alerts.yml`](monitoring/metrics/prometheus/alerts.yml) and [`docs/runbooks.md`](docs/runbooks.md) |
+| Why each signal is watched | [`docs/monitoring-rationale.md`](docs/monitoring-rationale.md) |
+| What went wrong on the way | [`docs/lab-notes.md`](docs/lab-notes.md) |
+
 ## Architecture
 
 ![Architecture: a control machine, four systemd hosts and a monitoring stack](docs/architecture.svg)
@@ -35,7 +45,7 @@ The diagram is generated: `python3 docs/build-architecture.py`.
 | `ansible/` | Host preparation, genesis, joining a validator, a non-voting RPC node, delegating stake, the hot spare, identity failover, a reset, and the monitoring agents |
 | `monitoring/` | Prometheus, Alertmanager, Grafana and Loki; alert rules in five layers; a generated dashboard; a unit test for the identity alerts |
 | `scripts/disk-guard.sh` | Stops the validators before the shared disk is full |
-| `docs/` | Why each signal is monitored, and the lab notes |
+| `docs/` | Keys and access, runbooks for every alert, why each signal is monitored, and the lab notes |
 | `.github/` | CI: lint, workflow audit, secret scan, image CVE scan |
 
 The nodes:
@@ -213,6 +223,21 @@ expiry date, and the weekly run fails when it expires.
 
 Not covered: the images built here from `image/Dockerfile` and `monitoring/exporter/Dockerfile`
 are not scanned, and their base images are not pinned by digest.
+
+## Not done
+
+Said plainly, because a lab invites the assumption that it covers more than it does.
+
+- **A takeover when the primary cannot be reached.** `failover.yml` is a planned switch between two
+  healthy hosts. Fencing the old host and taking over without its latest tower is described in the
+  runbooks and not yet rehearsed.
+- **An upgrade across versions.** Only one Agave version is built here, so "upgrade the spare, switch,
+  upgrade the old primary" has been done as a switch, never with two binaries.
+- **Running out of identity balance.** The alerts exist; the drill has not been run.
+- **Secrets handling.** The withdraw authority and the delegator keys are plain files on the control
+  machine. No hardware wallet, no multisig, no encryption at rest.
+- **Host hardening.** The hosts are privileged containers without firewall rules.
+- Several alerts have never fired on the cluster; [`docs/runbooks.md`](docs/runbooks.md) says which.
 
 ## Some things running it showed
 

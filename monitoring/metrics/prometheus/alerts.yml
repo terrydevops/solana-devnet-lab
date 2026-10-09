@@ -8,6 +8,8 @@
 #       (the spare is down, the disk fills tomorrow) or the monitoring is partly blind.
 #   p3  a ticket for working hours. Trends and hygiene.
 #
+# Every rule carries a `runbook` annotation that points at docs/runbooks.md.
+#
 # The same fault has a different priority on different hosts: a dead validator process is p1 on
 # the host that runs a staked identity and p2 on the hot spare or the RPC node.
 #
@@ -92,6 +94,7 @@ groups:
           severity: p1
         annotations:
           summary: "cluster root slot has not advanced in 2 minutes"
+          runbook: "https://github.com/terrydevops/solana-devnet-lab/blob/main/docs/runbooks.md#clusterrootstalled"
 
       # The skip-rate rules are blind when the leader-slot counters stop moving, and a blind rule
       # looks exactly like a healthy one. Slots keep being finalized, so somebody is leader.
@@ -104,6 +107,7 @@ groups:
           severity: p2
         annotations:
           summary: "leader slots are no longer being counted: skip rates and their alerts are blind"
+          runbook: "https://github.com/terrydevops/solana-devnet-lab/blob/main/docs/runbooks.md#leaderslotcountersstalled"
 
       - alert: ClusterSkipRateHigh
         expr: solana:cluster_skip_rate:1h > 0.25
@@ -112,6 +116,7 @@ groups:
           severity: p3
         annotations:
           summary: "more than a quarter of leader slots in the cluster were skipped over the last hour"
+          runbook: "https://github.com/terrydevops/solana-devnet-lab/blob/main/docs/runbooks.md#validatorskipratehigh-clusterskipratehigh-leaderslotbudgetburn"
 
   # ---- layer 2: our validators ---------------------------------------------
   # Are we doing the job we are paid for? Votes earn credits, leader slots earn fees.
@@ -126,6 +131,7 @@ groups:
           severity: p1
         annotations:
           summary: "validator {{ $labels.nodekey }} is marked delinquent"
+          runbook: "https://github.com/terrydevops/solana-devnet-lab/blob/main/docs/runbooks.md#validatorvotelagging-validatordelinquent-validatorrootstalled"
 
       # Early version of the same failure, before the cluster marks us.
       - alert: ValidatorVoteLagging
@@ -138,6 +144,7 @@ groups:
           severity: p1
         annotations:
           summary: "validator {{ $labels.nodekey }} last voted {{ $value }} slots behind the cluster"
+          runbook: "https://github.com/terrydevops/solana-devnet-lab/blob/main/docs/runbooks.md#validatorvotelagging-validatordelinquent-validatorrootstalled"
 
       # Catch-all for a stuck node, whatever the reason: its own root does not move.
       - alert: ValidatorRootStalled
@@ -147,6 +154,7 @@ groups:
           severity: p1
         annotations:
           summary: "validator {{ $labels.nodekey }} root slot has not advanced in 3 minutes"
+          runbook: "https://github.com/terrydevops/solana-devnet-lab/blob/main/docs/runbooks.md#validatorvotelagging-validatordelinquent-validatorrootstalled"
 
       # The one rule of failover, watched from outside: never two machines with one voting
       # identity. No waiting: every second of this is a second in which both can sign votes.
@@ -156,6 +164,7 @@ groups:
           severity: p1
         annotations:
           summary: "identity {{ $labels.identity }} runs on {{ $value }} hosts at once"
+          runbook: "https://github.com/terrydevops/solana-devnet-lab/blob/main/docs/runbooks.md#votingidentityontwohosts"
 
       # A validator identity that no host runs: a failover that let go and never took over, or
       # a host that came back from a reboot with its unstaked key. The wait is longer than a
@@ -170,6 +179,7 @@ groups:
           severity: p1
         annotations:
           summary: "no host runs validator identity {{ $labels.identity }}"
+          runbook: "https://github.com/terrydevops/solana-devnet-lab/blob/main/docs/runbooks.md#votingidentitynotheld"
 
       # Leader slots are where fees come from. A skipped slot is income that went to nobody.
       - alert: ValidatorSkipRateHigh
@@ -179,6 +189,7 @@ groups:
           severity: p3
         annotations:
           summary: "validator {{ $labels.nodekey }} skipped over 20% of its leader slots in the last hour"
+          runbook: "https://github.com/terrydevops/solana-devnet-lab/blob/main/docs/runbooks.md#validatorskipratehigh-clusterskipratehigh-leaderslotbudgetburn"
 
       # The degradation nobody notices: the validator votes, is never delinquent, and earns less
       # than its peers because its votes land late. Compared with the best validator in the
@@ -190,6 +201,7 @@ groups:
           severity: p3
         annotations:
           summary: "validator {{ $labels.nodekey }} earns {{ $value | humanizePercentage }} of the best validator's vote credits"
+          runbook: "https://github.com/terrydevops/solana-devnet-lab/blob/main/docs/runbooks.md#validatorcreditsbehind-creditsbudgetfastburn-creditsbudgetslowburn"
 
       # A business signal, not a fault: a delegator left, or stake is deactivating.
       - alert: ValidatorStakeDropped
@@ -201,6 +213,7 @@ groups:
           severity: p3
         annotations:
           summary: "active stake of {{ $labels.nodekey }} fell more than 10% within an hour"
+          runbook: "https://github.com/terrydevops/solana-devnet-lab/blob/main/docs/runbooks.md#validatorstakedropped-validatorstakesharedropped"
 
       # The same question as a share of the cluster. Fires when our slice shrinks for any
       # reason, including other validators gaining stake while ours stands still.
@@ -213,6 +226,7 @@ groups:
           severity: p3
         annotations:
           summary: "stake share of {{ $labels.nodekey }} is {{ $value | humanizePercentage }}, more than 10% below an hour ago"
+          runbook: "https://github.com/terrydevops/solana-devnet-lab/blob/main/docs/runbooks.md#validatorstakedropped-validatorstakesharedropped"
 
   # ---- layer 3: funds ------------------------------------------------------
   # Voting is paid for from the identity account. When it is empty the validator stops voting
@@ -226,6 +240,7 @@ groups:
           severity: p2
         annotations:
           summary: "identity account {{ $labels.address }} is projected to be empty within 3 days"
+          runbook: "https://github.com/terrydevops/solana-devnet-lab/blob/main/docs/runbooks.md#identitybalancelow-identitybalancerunningout"
 
       - alert: IdentityBalanceLow
         expr: solana:identity_balance:sol < 1
@@ -234,6 +249,7 @@ groups:
           severity: p1
         annotations:
           summary: "identity account {{ $labels.address }} holds less than 1 SOL"
+          runbook: "https://github.com/terrydevops/solana-devnet-lab/blob/main/docs/runbooks.md#identitybalancelow-identitybalancerunningout"
 
   # ---- layer 4: node and service -------------------------------------------
   # Per node, seen from the node itself.
@@ -248,6 +264,7 @@ groups:
           severity: p1
         annotations:
           summary: "node {{ $labels.node }} reports itself unhealthy (host runs a staked identity)"
+          runbook: "https://github.com/terrydevops/solana-devnet-lab/blob/main/docs/runbooks.md#nodedown-nodeunhealthy-nodefallingbehind-nodeslotstalled"
 
       - alert: NodeUnhealthy
         expr: >
@@ -258,6 +275,7 @@ groups:
           severity: p2
         annotations:
           summary: "node {{ $labels.node }} reports itself unhealthy (standby or RPC host: redundancy or service lost, no stake at risk)"
+          runbook: "https://github.com/terrydevops/solana-devnet-lab/blob/main/docs/runbooks.md#nodedown-nodeunhealthy-nodefallingbehind-nodeslotstalled"
 
       - alert: NodeFallingBehind
         expr: >
@@ -268,6 +286,7 @@ groups:
           severity: p1
         annotations:
           summary: "node {{ $labels.node }} is {{ $value }} slots behind the cluster (host runs a staked identity)"
+          runbook: "https://github.com/terrydevops/solana-devnet-lab/blob/main/docs/runbooks.md#nodedown-nodeunhealthy-nodefallingbehind-nodeslotstalled"
 
       - alert: NodeFallingBehind
         expr: >
@@ -278,6 +297,7 @@ groups:
           severity: p2
         annotations:
           summary: "node {{ $labels.node }} is {{ $value }} slots behind the cluster (standby or RPC host: redundancy or service lost, no stake at risk)"
+          runbook: "https://github.com/terrydevops/solana-devnet-lab/blob/main/docs/runbooks.md#nodedown-nodeunhealthy-nodefallingbehind-nodeslotstalled"
 
       # The node answers but its slot counter does not move.
       - alert: NodeSlotStalled
@@ -289,6 +309,7 @@ groups:
           severity: p1
         annotations:
           summary: "node {{ $labels.node }} slot height has not advanced in 2 minutes (host runs a staked identity)"
+          runbook: "https://github.com/terrydevops/solana-devnet-lab/blob/main/docs/runbooks.md#nodedown-nodeunhealthy-nodefallingbehind-nodeslotstalled"
 
       - alert: NodeSlotStalled
         expr: >
@@ -299,6 +320,7 @@ groups:
           severity: p2
         annotations:
           summary: "node {{ $labels.node }} slot height has not advanced in 2 minutes (standby or RPC host: redundancy or service lost, no stake at risk)"
+          runbook: "https://github.com/terrydevops/solana-devnet-lab/blob/main/docs/runbooks.md#nodedown-nodeunhealthy-nodefallingbehind-nodeslotstalled"
 
       # Mixed versions are normal for the length of a rolling upgrade and a mistake after it.
       - alert: NodeVersionMismatch
@@ -308,6 +330,7 @@ groups:
           severity: p3
         annotations:
           summary: "nodes have been running different versions for over an hour"
+          runbook: "https://github.com/terrydevops/solana-devnet-lab/blob/main/docs/runbooks.md#hostmemorylow-nodeversionmismatch"
 
   # ---- layer 5: foundation -------------------------------------------------
   # Is any of this being measured? A dead exporter looks exactly like a quiet system.
@@ -322,6 +345,7 @@ groups:
           severity: p1
         annotations:
           summary: "exporter for node {{ $labels.node }} is not being scraped (host runs a staked identity)"
+          runbook: "https://github.com/terrydevops/solana-devnet-lab/blob/main/docs/runbooks.md#nodedown-nodeunhealthy-nodefallingbehind-nodeslotstalled"
 
       - alert: NodeDown
         expr: >
@@ -332,6 +356,7 @@ groups:
           severity: p2
         annotations:
           summary: "exporter for node {{ $labels.node }} is not being scraped (standby or RPC host: redundancy or service lost, no stake at risk)"
+          runbook: "https://github.com/terrydevops/solana-devnet-lab/blob/main/docs/runbooks.md#nodedown-nodeunhealthy-nodefallingbehind-nodeslotstalled"
 
       - alert: MonitoringTargetDown
         expr: up{job=~"prometheus|alertmanager|alert-sink|grafana|loki|solana-credits"} == 0
@@ -340,6 +365,7 @@ groups:
           severity: p2
         annotations:
           summary: "monitoring component {{ $labels.job }} is not being scraped"
+          runbook: "https://github.com/terrydevops/solana-devnet-lab/blob/main/docs/runbooks.md#monitoringtargetdown-hostagentdown"
 
       - alert: HostAgentDown
         expr: up{job=~"node|alloy"} == 0
@@ -348,6 +374,7 @@ groups:
           severity: p2
         annotations:
           summary: "agent {{ $labels.job }} on {{ $labels.node }} is not being scraped"
+          runbook: "https://github.com/terrydevops/solana-devnet-lab/blob/main/docs/runbooks.md#monitoringtargetdown-hostagentdown"
 
       # The next three are the rules that were missing on 2026-10-08, when the disk filled and
       # systemd restarted the validators for six hours. They read node_exporter on the hosts.
@@ -366,6 +393,7 @@ groups:
           severity: p2
         annotations:
           summary: "disk {{ $labels.device }} on {{ $labels.node }} is projected to fill within 24 hours"
+          runbook: "https://github.com/terrydevops/solana-devnet-lab/blob/main/docs/runbooks.md#hostdiskwillfillsoon-hostdiskspacelow"
 
       - alert: HostDiskSpaceLow
         expr: >
@@ -376,6 +404,7 @@ groups:
           severity: p1
         annotations:
           summary: "{{ $labels.mountpoint }} on {{ $labels.node }} has under 15% free space (host runs a staked identity)"
+          runbook: "https://github.com/terrydevops/solana-devnet-lab/blob/main/docs/runbooks.md#hostdiskwillfillsoon-hostdiskspacelow"
 
       - alert: HostDiskSpaceLow
         expr: >
@@ -386,6 +415,7 @@ groups:
           severity: p2
         annotations:
           summary: "{{ $labels.mountpoint }} on {{ $labels.node }} has under 15% free space (standby or RPC host: redundancy or service lost, no stake at risk)"
+          runbook: "https://github.com/terrydevops/solana-devnet-lab/blob/main/docs/runbooks.md#hostdiskwillfillsoon-hostdiskspacelow"
 
       # Restart=on-failure keeps a crashing service looking alive. Count the restarts.
       - alert: ValidatorServiceRestarting
@@ -396,6 +426,7 @@ groups:
           severity: p1
         annotations:
           summary: "sol.service on {{ $labels.node }} restarted more than twice in 15 minutes (host runs a staked identity)"
+          runbook: "https://github.com/terrydevops/solana-devnet-lab/blob/main/docs/runbooks.md#validatorservicerestarting-validatorservicenotactive"
 
       - alert: ValidatorServiceRestarting
         expr: >
@@ -405,6 +436,7 @@ groups:
           severity: p2
         annotations:
           summary: "sol.service on {{ $labels.node }} restarted more than twice in 15 minutes (standby or RPC host: redundancy or service lost, no stake at risk)"
+          runbook: "https://github.com/terrydevops/solana-devnet-lab/blob/main/docs/runbooks.md#validatorservicerestarting-validatorservicenotactive"
 
       # The unit is neither running nor being restarted: someone stopped it, or it gave up.
       # The spare is included: a hot spare that is not running is not a spare.
@@ -417,6 +449,7 @@ groups:
           severity: p1
         annotations:
           summary: "sol.service on {{ $labels.node }} is not active (host runs a staked identity)"
+          runbook: "https://github.com/terrydevops/solana-devnet-lab/blob/main/docs/runbooks.md#validatorservicerestarting-validatorservicenotactive"
 
       - alert: ValidatorServiceNotActive
         expr: >
@@ -427,6 +460,7 @@ groups:
           severity: p2
         annotations:
           summary: "sol.service on {{ $labels.node }} is not active (standby or RPC host: redundancy or service lost, no stake at risk)"
+          runbook: "https://github.com/terrydevops/solana-devnet-lab/blob/main/docs/runbooks.md#validatorservicerestarting-validatorservicenotactive"
 
       # The accounts database is memory-mapped; a validator short of memory is killed by the
       # kernel and comes back through the restart rule above. This is the earlier signal.
@@ -437,6 +471,7 @@ groups:
           severity: p2
         annotations:
           summary: "{{ $labels.node }} has under 10% of memory available"
+          runbook: "https://github.com/terrydevops/solana-devnet-lab/blob/main/docs/runbooks.md#hostmemorylow-nodeversionmismatch"
 
   # ==== service level objectives ===========================================
   # The layers above say what is broken. These say whether the validator is doing what its
@@ -524,6 +559,7 @@ groups:
           severity: p1
         annotations:
           summary: "validator {{ $labels.nodekey }} is spending its vote-credits budget {{ $value | humanize }} times too fast"
+          runbook: "https://github.com/terrydevops/solana-devnet-lab/blob/main/docs/runbooks.md#validatorcreditsbehind-creditsbudgetfastburn-creditsbudgetslowburn"
 
       # 6 times too fast over half an hour and over six hours: a steady leak, such as votes
       # landing late. Never delinquent, never noticed, and paid less every epoch.
@@ -534,6 +570,7 @@ groups:
           severity: p3
         annotations:
           summary: "validator {{ $labels.nodekey }} has been earning below its 99% credits target for hours"
+          runbook: "https://github.com/terrydevops/solana-devnet-lab/blob/main/docs/runbooks.md#validatorcreditsbehind-creditsbudgetfastburn-creditsbudgetslowburn"
 
       - alert: LeaderSlotBudgetBurn
         expr: slo:leader_slots_budget_burn:rate1h > 6 and slo:leader_slots_budget_burn:rate6h > 6
@@ -542,3 +579,4 @@ groups:
           severity: p3
         annotations:
           summary: "validator {{ $labels.nodekey }} is skipping leader slots {{ $value | humanize }} times faster than its 98% target allows"
+          runbook: "https://github.com/terrydevops/solana-devnet-lab/blob/main/docs/runbooks.md#validatorskipratehigh-clusterskipratehigh-leaderslotbudgetburn"

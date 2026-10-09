@@ -25,7 +25,9 @@ tests:
         alertname: VotingIdentityOnTwoHosts
         exp_alerts:
           - exp_labels: { severity: p1, identity: STAKED }
-            exp_annotations: { summary: "identity STAKED runs on 2 hosts at once" }
+            exp_annotations:
+              summary: "identity STAKED runs on 2 hosts at once"
+              runbook: "https://github.com/terrydevops/solana-devnet-lab/blob/main/docs/runbooks.md#votingidentityontwohosts"
       - eval_time: 80s
         alertname: VotingIdentityNotHeld
         exp_alerts: []
@@ -36,7 +38,9 @@ tests:
         alertname: VotingIdentityNotHeld
         exp_alerts:
           - exp_labels: { severity: p1, identity: STAKED, nodekey: STAKED }
-            exp_annotations: { summary: "no host runs validator identity STAKED" }
+            exp_annotations:
+              summary: "no host runs validator identity STAKED"
+              runbook: "https://github.com/terrydevops/solana-devnet-lab/blob/main/docs/runbooks.md#votingidentitynotheld"
       - eval_time: 260s
         alertname: VotingIdentityNotHeld
         exp_alerts: []

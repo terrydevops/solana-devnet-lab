@@ -23,6 +23,10 @@ tests:
         alertname: NodeDown
         exp_alerts:
           - exp_labels: { severity: p1, job: solana, node: primary }
-            exp_annotations: { summary: "exporter for node primary is not being scraped (host runs a staked identity)" }
+            exp_annotations:
+              summary: "exporter for node primary is not being scraped (host runs a staked identity)"
+              runbook: "https://github.com/terrydevops/solana-devnet-lab/blob/main/docs/runbooks.md#nodedown-nodeunhealthy-nodefallingbehind-nodeslotstalled"
           - exp_labels: { severity: p2, job: solana, node: spare }
-            exp_annotations: { summary: "exporter for node spare is not being scraped (standby or RPC host: redundancy or service lost, no stake at risk)" }
+            exp_annotations:
+              summary: "exporter for node spare is not being scraped (standby or RPC host: redundancy or service lost, no stake at risk)"
+              runbook: "https://github.com/terrydevops/solana-devnet-lab/blob/main/docs/runbooks.md#nodedown-nodeunhealthy-nodefallingbehind-nodeslotstalled"
