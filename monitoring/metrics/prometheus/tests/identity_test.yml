@@ -1,0 +1,41 @@
+# Unit test for the two identity alerts. The rules file path is the one inside the container:
+#   docker cp metrics/prometheus/tests/identity_test.yml sol-prometheus:/tmp/ && \
+#   docker exec sol-prometheus promtool test rules /tmp/identity_test.yml
+# A series that disappears from a scrape gets a stale marker in Prometheus; `stale` models that.
+# A plain gap (`_`) would keep the last value alive for five minutes and hide the failure.
+rule_files: [/etc/prometheus/alerts.yml]
+evaluation_interval: 5s
+tests:
+  - interval: 5s
+    input_series:
+      - series: 'solana_validator_last_vote{nodekey="STAKED", node="rpc"}'
+        values: '1+1x60'
+      - series: 'solana_node_identity{identity="STAKED", node="validator2"}'
+        values: '1x20 stale _x39'          # holds it for 100 s, then lets go
+      - series: 'solana_node_identity{identity="STAKED", node="spare"}'
+        values: '_x10 1x9 stale _x19 1x20'   # overlap from 55 s to 100 s, gap from 105 s to 200 s
+      - series: 'solana_node_identity{identity="OTHER", node="spare"}'
+        values: '1x10 stale _x49'
+    alert_rule_test:
+      - eval_time: 30s
+        alertname: VotingIdentityOnTwoHosts
+        exp_alerts: []
+      - eval_time: 80s
+        alertname: VotingIdentityOnTwoHosts
+        exp_alerts:
+          - exp_labels: { severity: page, identity: STAKED }
+            exp_annotations: { summary: "identity STAKED runs on 2 hosts at once" }
+      - eval_time: 80s
+        alertname: VotingIdentityNotHeld
+        exp_alerts: []
+      - eval_time: 120s
+        alertname: VotingIdentityNotHeld
+        exp_alerts: []                 # gap is 15 s old: still pending
+      - eval_time: 180s
+        alertname: VotingIdentityNotHeld
+        exp_alerts:
+          - exp_labels: { severity: page, identity: STAKED, nodekey: STAKED }
+            exp_annotations: { summary: "no host runs validator identity STAKED" }
+      - eval_time: 260s
+        alertname: VotingIdentityNotHeld
+        exp_alerts: []

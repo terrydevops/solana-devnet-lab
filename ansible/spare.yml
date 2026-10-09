@@ -1,0 +1,61 @@
+---
+# Prepare a primary and its hot spare for identity failover. Run once:
+#   ansible-playbook spare.yml
+#   ansible-playbook site.yml --tags service --limit spare -e solana_start=true
+#
+# Key layout on both hosts afterwards (keys/):
+#   staked-identity.json     the validator's real identity: the one stake is delegated to
+#   unstaked-identity.json   a throwaway identity, different on each host
+#   identity.json            symlink to one of the two; the start script reads this path
+#
+# The symlink is the safety catch. A host whose link points at the unstaked key cannot come back
+# from a reboot voting with the staked identity while the other host already uses it.
+- name: Key layout for failover
+  hosts: validator2:spare
+  become: true
+  become_user: sol
+  vars:
+    keys: /home/sol/keys
+  tasks:
+    - name: Unstaked identity, unique to this host
+      ansible.builtin.command: "solana-keygen new --no-bip39-passphrase -so {{ keys }}/unstaked-identity.json"
+      args: { creates: "{{ keys }}/unstaked-identity.json" }
+
+    - name: Is identity.json still a plain file on the primary?
+      ansible.builtin.stat: { path: "{{ keys }}/identity.json" }
+      register: ident
+
+    - name: Primary only, rename the real identity
+      ansible.builtin.command: "mv {{ keys }}/identity.json {{ keys }}/staked-identity.json"
+      args: { creates: "{{ keys }}/staked-identity.json" }
+      when: inventory_hostname == 'validator2' and ident.stat.exists and not ident.stat.islnk
+
+    - name: Read the staked identity from the primary
+      ansible.builtin.slurp: { src: "{{ keys }}/staked-identity.json" }
+      delegate_to: validator2
+      register: staked
+      no_log: true
+      when: inventory_hostname == 'spare'
+
+    - name: Place it on the spare, at rest, readable by the service user only
+      ansible.builtin.copy:
+        content: "{{ staked.content | b64decode }}"
+        dest: "{{ keys }}/staked-identity.json"
+        mode: "0600"
+      no_log: true
+      when: inventory_hostname == 'spare'
+
+    - name: Point identity.json at the role this host has now (do not touch an existing link)
+      ansible.builtin.file:
+        src: "{{ keys }}/{{ 'staked' if inventory_hostname == 'validator2' else 'unstaked' }}-identity.json"
+        dest: "{{ keys }}/identity.json"
+        state: link
+      when: not (ident.stat.exists and ident.stat.islnk)
+
+    - name: Layout
+      ansible.builtin.command: "ls -l {{ keys }}"
+      register: layout
+      changed_when: false
+
+    - name: Show
+      ansible.builtin.debug: { var: layout.stdout_lines }

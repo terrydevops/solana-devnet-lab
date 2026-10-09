@@ -1,0 +1,16 @@
+# The "servers". In this lab they are systemd containers (../hosts/docker-compose.yml), reached
+# with the docker connection plugin. On real hardware only ansible_connection / ansible_host change.
+all:
+  vars:
+    ansible_connection: community.docker.docker
+  children:
+    solana:
+      children:
+        voting:
+          hosts:
+            bootstrap:  { ansible_host: sol-bootstrap,  node_ip: 172.30.0.11, solana_role: bootstrap }
+            validator2: { ansible_host: sol-validator2, node_ip: 172.30.0.12, solana_role: validator, solana_failover: true }
+        nonvoting:
+          hosts:
+            rpc:   { ansible_host: sol-rpc,   node_ip: 172.30.0.13, solana_role: rpc }
+            spare: { ansible_host: sol-spare, node_ip: 172.30.0.14, solana_role: spare, solana_failover: true }

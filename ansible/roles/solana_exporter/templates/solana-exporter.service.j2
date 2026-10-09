@@ -1,0 +1,35 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Solana exporter ({{ 'light' if solana_exporter_light | bool else 'full' }} mode)
+After=network-online.target sol.service
+Wants=network-online.target
+
+[Service]
+User={{ solana_exporter_user }}
+Group={{ solana_exporter_user }}
+ExecStart=/usr/local/bin/solana-exporter \
+  -rpc-url {{ solana_exporter_rpc_url }} \
+  -listen-address {{ node_ip }}:{{ solana_exporter_port }} \
+{% if solana_exporter_light | bool %}
+  -light-mode
+{% else %}
+{% for k in solana_exporter_nodekeys %}
+  -nodekey {{ k }} \
+{% endfor %}
+{% for k in solana_exporter_votekeys %}
+  -votekey {{ k }} \
+{% endfor %}
+{% if solana_exporter_comprehensive | bool %}
+  -comprehensive-slot-tracking \
+  -comprehensive-vote-account-tracking \
+{% endif %}
+  -http-timeout 30
+{% endif %}
+# The exporter exits when the RPC is not up yet. Keep trying; the validator may still be loading.
+Restart=always
+RestartSec=10
+NoNewPrivileges=true
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

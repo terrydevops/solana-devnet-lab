@@ -1,0 +1,12 @@
+# Log shipping from the host to Loki with Grafana Alloy. (Promtail is no longer in the Loki tree.)
+alloy_version: "1.20.1"
+alloy_arch: "{{ 'arm64' if ansible_facts['architecture'] in ['aarch64', 'arm64'] else 'amd64' }}"
+alloy_checksums:
+  arm64: "sha256:396827d58158f181c98d5776c908348b38b4099f1d18a1e7554f2fda0fcb9203"
+alloy_user: alloy
+alloy_http_port: 12345
+alloy_loki_url: "http://sol-loki:3100/loki/api/v1/push"
+alloy_validator_log: "{{ solana_log_dir | default('/var/log/solana') }}/validator.log"
+
+# Share of INFO lines that is shipped. WARN and ERROR are always shipped in full.
+alloy_info_sample_rate: 0.05

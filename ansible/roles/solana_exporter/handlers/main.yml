@@ -1,0 +1,12 @@
+---
+- name: Restart solana-exporter
+  ansible.builtin.systemd:
+    name: solana-exporter.service
+    state: restarted
+    daemon_reload: true
+
+- name: Restart vote-credits-exporter
+  ansible.builtin.systemd:
+    name: vote-credits-exporter.service
+    state: restarted
+    daemon_reload: true

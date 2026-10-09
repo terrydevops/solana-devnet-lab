@@ -1,0 +1,10 @@
+# Host metrics for Prometheus. Pinned version with the checksum published for that release.
+node_exporter_version: "1.12.1"
+node_exporter_arch: "{{ 'arm64' if ansible_facts['architecture'] in ['aarch64', 'arm64'] else 'amd64' }}"
+node_exporter_checksums:
+  arm64: "sha256:ad35b605f9954b9f1ffddf5ba054bdc5a98d790b9eae5291e1eeb83f1ecbd0e7"
+node_exporter_port: 9100
+node_exporter_user: node_exporter
+
+# Units the systemd collector reports on. Only what we alert on: every extra unit is more series.
+node_exporter_systemd_units: 'sol\.service'

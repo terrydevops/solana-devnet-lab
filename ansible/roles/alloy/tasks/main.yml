@@ -1,0 +1,103 @@
+---
+# Grafana Alloy as a systemd service. It reads the validator log and the journal of sol.service
+# and pushes both to Loki.
+
+- name: unzip for the release archive
+  ansible.builtin.apt:
+    name: unzip
+    state: present
+    update_cache: true
+    cache_valid_time: 86400
+
+# Member of the validator's group to read its log directory, and of systemd-journal to read
+# the journal. No other access.
+- name: Service user
+  ansible.builtin.user:
+    name: "{{ alloy_user }}"
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+    groups: ["{{ solana_user | default('sol') }}", systemd-journal]
+    append: true
+
+- name: Directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ alloy_user }}"
+    group: "{{ alloy_user }}"
+    mode: "0750"
+  loop: [/etc/alloy, /var/lib/alloy]
+
+- name: Installed version
+  ansible.builtin.command: /usr/local/bin/alloy --version
+  register: alloy_installed
+  changed_when: false
+  failed_when: false
+
+- name: Download and install
+  when: ('v' ~ alloy_version) not in (alloy_installed.stdout | default(''))
+  block:
+    - name: Download the release archive (checksum verified)
+      ansible.builtin.get_url:
+        url: "https://github.com/grafana/alloy/releases/download/v{{ alloy_version }}/alloy-linux-{{ alloy_arch }}.zip"
+        dest: /tmp/alloy.zip
+        checksum: "{{ alloy_checksums[alloy_arch] }}"
+        mode: "0644"
+
+    - name: Unpack
+      ansible.builtin.unarchive:
+        src: /tmp/alloy.zip
+        dest: /tmp
+        remote_src: true
+
+    - name: Install the binary
+      ansible.builtin.copy:
+        src: "/tmp/alloy-linux-{{ alloy_arch }}"
+        dest: /usr/local/bin/alloy
+        remote_src: true
+        owner: root
+        group: root
+        mode: "0755"
+      notify: Restart alloy
+
+    - name: Remove the download
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop: [/tmp/alloy.zip, "/tmp/alloy-linux-{{ alloy_arch }}"]
+
+- name: Configuration
+  ansible.builtin.template:
+    src: config.alloy.j2
+    dest: /etc/alloy/config.alloy
+    owner: "{{ alloy_user }}"
+    group: "{{ alloy_user }}"
+    mode: "0640"
+    validate: /usr/local/bin/alloy fmt %s
+  notify: Restart alloy
+
+- name: systemd unit
+  ansible.builtin.template:
+    src: alloy.service.j2
+    dest: /etc/systemd/system/alloy.service
+    mode: "0644"
+  notify: Restart alloy
+
+- name: Enable and start
+  ansible.builtin.systemd:
+    name: alloy.service
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Run handlers now so the check below sees the new process
+  ansible.builtin.meta: flush_handlers
+
+- name: Alloy reports ready
+  ansible.builtin.uri:
+    url: "http://{{ node_ip }}:{{ alloy_http_port }}/-/ready"
+  register: alloy_ready
+  retries: 10
+  delay: 3
+  until: alloy_ready.status == 200

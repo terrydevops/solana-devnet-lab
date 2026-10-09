@@ -1,0 +1,37 @@
+---
+# The validator as a systemd service. Rendered on every host; started only where keys exist.
+
+- name: Start script
+  ansible.builtin.template:
+    src: validator.sh.j2
+    dest: "{{ solana_home }}/bin/validator.sh"
+    owner: "{{ solana_user }}"
+    group: "{{ solana_user }}"
+    mode: "0750"
+  notify: Restart validator
+
+- name: systemd unit
+  ansible.builtin.template:
+    src: sol.service.j2
+    dest: /etc/systemd/system/sol.service
+    mode: "0644"
+  notify: Restart validator
+
+- name: Log rotation (the validator reopens its log on SIGUSR1)
+  ansible.builtin.template:
+    src: logrotate.j2
+    dest: /etc/logrotate.d/solana
+    mode: "0644"
+
+- name: Is there an identity key on this host?
+  ansible.builtin.stat:
+    path: "{{ solana_home }}/keys/identity.json"
+  register: identity_key
+
+- name: Enable and start the validator
+  ansible.builtin.systemd:
+    name: sol.service
+    enabled: true
+    state: started
+    daemon_reload: true
+  when: identity_key.stat.exists and (solana_start | default(false) | bool)

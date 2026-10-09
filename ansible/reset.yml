@@ -1,0 +1,45 @@
+---
+# Wipe the chain data on every host so a new genesis can be made. Destructive and not reversible:
+# the ledger, the accounts, the snapshots and the tower files are deleted. Keys are kept, so the
+# identities stay the same; the genesis hash changes.
+#
+#   ansible-playbook reset.yml -e confirm=yes
+#
+# Afterwards: genesis.yml, put the new hash into group_vars/solana.yml, then start and join again.
+- name: Reset the cluster data
+  hosts: solana
+  become: true
+  tasks:
+    - name: Refuse to run without an explicit confirmation
+      ansible.builtin.assert:
+        that: (confirm | default('no')) == 'yes'
+        fail_msg: "This deletes all chain data on {{ inventory_hostname }}. Re-run with -e confirm=yes"
+        quiet: true
+
+    - name: Is the service installed?
+      ansible.builtin.stat:
+        path: /etc/systemd/system/sol.service
+      register: unit
+
+    - name: Stop the validator
+      ansible.builtin.systemd:
+        name: sol.service
+        state: stopped
+      when: unit.stat.exists
+
+    - name: Delete ledger, accounts and snapshots (the mount points stay)
+      ansible.builtin.shell: "find {{ item }} -mindepth 1 -delete"
+      loop:
+        - "{{ solana_ledger_dir | default('/mnt/ledger') }}"
+        - "{{ solana_accounts_dir | default('/mnt/accounts') }}"
+        - "{{ solana_snapshots_dir | default('/mnt/snapshots') }}"
+      changed_when: true
+
+    - name: Delete the validator logs of the old chain
+      ansible.builtin.shell: "find {{ solana_log_dir | default('/var/log/solana') }} -mindepth 1 -delete"
+      changed_when: true
+
+    - name: Delete the genesis summary of the old chain
+      ansible.builtin.file:
+        path: /home/sol/genesis/genesis.out
+        state: absent

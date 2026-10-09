@@ -1,0 +1,12 @@
+---
+- name: Host preparation
+  ansible.builtin.import_tasks: host.yml
+  tags: [host]
+
+- name: Binaries
+  ansible.builtin.import_tasks: binaries.yml
+  tags: [binaries]
+
+- name: Service
+  ansible.builtin.import_tasks: service.yml
+  tags: [service]

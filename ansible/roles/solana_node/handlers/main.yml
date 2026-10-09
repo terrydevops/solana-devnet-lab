@@ -1,0 +1,7 @@
+---
+- name: Restart validator
+  ansible.builtin.systemd:
+    name: sol.service
+    state: restarted
+    daemon_reload: true
+  when: solana_restart_on_change | default(false) | bool

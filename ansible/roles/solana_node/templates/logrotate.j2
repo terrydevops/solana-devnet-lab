@@ -1,0 +1,10 @@
+# {{ ansible_managed }}
+{{ solana_log_dir }}/validator.log {
+  rotate 7
+  daily
+  missingok
+  compress
+  postrotate
+    systemctl kill -s USR1 sol.service
+  endscript
+}

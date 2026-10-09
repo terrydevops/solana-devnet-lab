@@ -1,0 +1,23 @@
+# Chain metrics, collected on the host. Two processes:
+#   solana-exporter        community exporter (asymmetric-research), polls the local RPC
+#   vote-credits-exporter  small addition for what the community exporter does not report
+#
+# Why on the host and not next to Prometheus: a voting validator does not open its RPC to the
+# network in production, so whatever polls it has to sit beside it.
+solana_exporter_user: sol_exporter
+solana_exporter_port: 9101
+vote_credits_exporter_port: 9102
+solana_exporter_rpc_url: "http://{{ node_ip }}:{{ solana_rpc_port | default(8899) }}"
+
+# Validators run the exporter in light mode: only what can be seen from that node alone (health,
+# slots behind, version). The heavy cluster-wide queries run on the RPC node, which does not vote.
+solana_exporter_light: "{{ solana_role != 'rpc' }}"
+
+# Full mode only. Identities with active stake go in nodekeys; a validator that has just joined
+# has none yet and the exporter refuses its nodekey, so it is listed by vote account.
+solana_exporter_nodekeys: []
+solana_exporter_votekeys: []
+
+# Tracks every validator of the cluster. Fine with two validators; on mainnet these two flags
+# create thousands of new series per epoch and must stay off.
+solana_exporter_comprehensive: true

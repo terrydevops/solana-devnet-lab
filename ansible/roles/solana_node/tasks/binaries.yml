@@ -1,0 +1,28 @@
+---
+# Binaries are built once (../image) and shipped as files, the way a release artefact would be.
+
+- name: Is there a build to install?
+  ansible.builtin.stat:
+    path: "{{ playbook_dir }}/files/bin/agave-validator"
+  delegate_to: localhost
+  register: built
+
+- name: Install Agave binaries
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/files/bin/{{ item }}"
+    dest: "{{ solana_bin_dir }}/{{ item }}"
+    owner: root
+    group: root
+    mode: "0755"
+  loop: [agave-validator, agave-watchtower, solana, solana-keygen, solana-genesis, solana-gossip, solana-faucet, fetch-core-bpf.sh, fetch-programs.sh]
+  when: built.stat.exists
+
+- name: Installed version
+  ansible.builtin.command: "{{ solana_bin_dir }}/agave-validator --version"
+  register: agave_version
+  changed_when: false
+  when: built.stat.exists
+
+- name: Show version
+  ansible.builtin.debug:
+    msg: "{{ agave_version.stdout | default('no build in files/bin yet: host prepared, binaries skipped') }}"

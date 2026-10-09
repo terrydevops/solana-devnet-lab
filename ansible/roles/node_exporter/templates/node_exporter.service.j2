@@ -1,0 +1,22 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Prometheus node_exporter
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User={{ node_exporter_user }}
+Group={{ node_exporter_user }}
+ExecStart=/usr/local/bin/node_exporter \
+  --web.listen-address={{ node_ip }}:{{ node_exporter_port }} \
+  --collector.systemd \
+  --collector.systemd.unit-include={{ node_exporter_systemd_units }} \
+  --collector.systemd.enable-restarts-metrics \
+  --collector.filesystem.fs-types-exclude=^(tmpfs|overlay|proc|sysfs|cgroup2?|devtmpfs|devpts|mqueue|nsfs|fakeowner)$
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

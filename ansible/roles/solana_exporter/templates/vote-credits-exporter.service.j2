@@ -1,0 +1,20 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Solana vote credits exporter
+After=network-online.target sol.service
+Wants=network-online.target
+
+[Service]
+User={{ solana_exporter_user }}
+Group={{ solana_exporter_user }}
+ExecStart=/usr/bin/python3 /usr/local/bin/vote-credits-exporter.py \
+  --rpc-url {{ solana_exporter_rpc_url }} \
+  --listen {{ node_ip }} \
+  --port {{ vote_credits_exporter_port }}
+Restart=always
+RestartSec=10
+NoNewPrivileges=true
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

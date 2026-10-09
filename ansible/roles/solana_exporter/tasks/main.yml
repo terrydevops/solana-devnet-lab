@@ -1,0 +1,93 @@
+---
+# Chain exporters as systemd services on the host. Only hosts that run a validator get them.
+
+- name: Service user without a shell or a home
+  ansible.builtin.user:
+    name: "{{ solana_exporter_user }}"
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+
+- name: Is there an exporter build to install?
+  ansible.builtin.stat:
+    path: "{{ playbook_dir }}/files/bin/solana-exporter"
+  delegate_to: localhost
+  become: false
+  register: exporter_build
+
+- name: The build must exist (monitoring/exporter/build.sh)
+  ansible.builtin.assert:
+    that: exporter_build.stat.exists
+    fail_msg: "files/bin/solana-exporter is missing. Build it with monitoring/exporter/build.sh"
+    quiet: true
+
+- name: Install solana-exporter
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/files/bin/solana-exporter"
+    dest: /usr/local/bin/solana-exporter
+    owner: root
+    group: root
+    mode: "0755"
+  notify: Restart solana-exporter
+
+- name: solana-exporter unit
+  ansible.builtin.template:
+    src: solana-exporter.service.j2
+    dest: /etc/systemd/system/solana-exporter.service
+    mode: "0644"
+  notify: Restart solana-exporter
+
+- name: Enable and start solana-exporter
+  ansible.builtin.systemd:
+    name: solana-exporter.service
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Vote credits exporter, on the RPC node only because it asks about the whole cluster
+  when: solana_role == 'rpc'
+  block:
+    - name: Install vote-credits-exporter
+      ansible.builtin.copy:
+        src: vote-credits-exporter.py
+        dest: /usr/local/bin/vote-credits-exporter.py
+        owner: root
+        group: root
+        mode: "0755"
+      notify: Restart vote-credits-exporter
+
+    - name: vote-credits-exporter unit
+      ansible.builtin.template:
+        src: vote-credits-exporter.service.j2
+        dest: /etc/systemd/system/vote-credits-exporter.service
+        mode: "0644"
+      notify: Restart vote-credits-exporter
+
+    - name: Enable and start vote-credits-exporter
+      ansible.builtin.systemd:
+        name: vote-credits-exporter.service
+        enabled: true
+        state: started
+        daemon_reload: true
+
+- name: Run handlers now so the checks below see the new processes
+  ansible.builtin.meta: flush_handlers
+
+- name: solana-exporter answers
+  ansible.builtin.uri:
+    url: "http://{{ node_ip }}:{{ solana_exporter_port }}/metrics"
+    return_content: true
+  register: exporter_metrics
+  retries: 10
+  delay: 3
+  until: exporter_metrics.status == 200 and 'solana_node_is_healthy' in exporter_metrics.content
+
+- name: vote-credits-exporter answers with credit values
+  ansible.builtin.uri:
+    url: "http://{{ node_ip }}:{{ vote_credits_exporter_port }}/metrics"
+    return_content: true
+  register: credits_metrics
+  retries: 10
+  delay: 3
+  until: credits_metrics.status == 200 and 'solana_vote_credits_total{' in credits_metrics.content
+  when: solana_role == 'rpc'

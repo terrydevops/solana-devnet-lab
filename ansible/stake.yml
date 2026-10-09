@@ -1,0 +1,81 @@
+---
+# Delegate stake to a validator's vote account, from the operator's machine.
+# The delegator's keys (operator wallet, stake account) stay in secrets/ on the Mac and reach the
+# cluster through the RPC node. A validator host never holds the stake authority.
+#
+# Stake is not active at once: it activates at an epoch boundary. Only then does the validator
+# appear in the leader schedule. `solana stake-account` shows the state.
+- name: Delegate stake
+  hosts: voting:!bootstrap
+  gather_facts: false
+  vars:
+    rpc_url: "http://127.0.0.1:8999"          # the rpc host, published to the Mac
+    cluster_rpc: "http://172.30.0.11:8899"
+    bin: "{{ playbook_dir }}/../.release/solana-release/bin"
+    operator: "{{ playbook_dir }}/secrets/operator.json"
+    stake_key: "{{ playbook_dir }}/secrets/{{ inventory_hostname }}-stake.json"
+    stake_sol: 1000
+  tasks:
+    - name: Operator wallet and stake-account keypairs (operator's machine)
+      ansible.builtin.command: "{{ bin }}/solana-keygen new --no-bip39-passphrase -so {{ item }}"
+      args: { creates: "{{ item }}" }
+      delegate_to: localhost
+      loop: ["{{ operator }}", "{{ stake_key }}"]
+
+    - name: Public keys
+      ansible.builtin.command: "{{ bin }}/solana-keygen pubkey {{ item }}"
+      delegate_to: localhost
+      loop: ["{{ operator }}", "{{ stake_key }}"]
+      register: pk
+      changed_when: false
+
+    - name: Vote account of this validator
+      ansible.builtin.command: solana-keygen pubkey /home/sol/keys/vote-account.json
+      become: true
+      become_user: sol
+      register: vote
+      changed_when: false
+
+    - name: Operator balance
+      ansible.builtin.command: "{{ bin }}/solana -u {{ rpc_url }} balance {{ pk.results[0].stdout | trim }}"
+      delegate_to: localhost
+      register: bal
+      changed_when: false
+
+    - name: Fund the operator wallet from the faucet
+      ansible.builtin.command: >-
+        solana -u {{ cluster_rpc }} -k /home/sol/keys/faucet.json transfer
+        --allow-unfunded-recipient {{ pk.results[0].stdout | trim }} {{ stake_sol + 10 }}
+      delegate_to: bootstrap
+      become: true
+      become_user: sol
+      when: (bal.stdout.split()[0] | float) < stake_sol
+
+    - name: Does the stake account exist?
+      ansible.builtin.command: "{{ bin }}/solana -u {{ rpc_url }} stake-account {{ pk.results[1].stdout | trim }}"
+      delegate_to: localhost
+      register: st
+      changed_when: false
+      failed_when: false
+
+    - name: Create the stake account
+      ansible.builtin.command: >-
+        {{ bin }}/solana -u {{ rpc_url }} -k {{ operator }} create-stake-account {{ stake_key }} {{ stake_sol }}
+      delegate_to: localhost
+      when: st.rc != 0
+
+    - name: Delegate it
+      ansible.builtin.command: >-
+        {{ bin }}/solana -u {{ rpc_url }} -k {{ operator }} delegate-stake
+        {{ pk.results[1].stdout | trim }} {{ vote.stdout | trim }}
+      delegate_to: localhost
+      when: st.rc != 0 or 'Delegated Vote Account Address' not in st.stdout
+
+    - name: Stake account state
+      ansible.builtin.command: "{{ bin }}/solana -u {{ rpc_url }} stake-account {{ pk.results[1].stdout | trim }}"
+      delegate_to: localhost
+      register: final
+      changed_when: false
+
+    - name: Show
+      ansible.builtin.debug: { var: final.stdout_lines }

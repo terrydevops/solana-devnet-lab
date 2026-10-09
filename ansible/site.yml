@@ -1,0 +1,6 @@
+---
+- name: Prepare Solana hosts
+  hosts: solana
+  gather_facts: true
+  roles:
+    - solana_node

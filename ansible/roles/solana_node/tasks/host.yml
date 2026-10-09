@@ -1,0 +1,66 @@
+---
+# Everything a host needs before a validator binary is put on it.
+
+- name: Packages the node scripts need
+  ansible.builtin.apt:
+    name: [curl, ca-certificates, bzip2, logrotate]
+    state: present
+    update_cache: true
+    cache_valid_time: 86400
+
+- name: Service user
+  ansible.builtin.user:
+    name: "{{ solana_user }}"
+    home: "{{ solana_home }}"
+    shell: /bin/bash
+    system: false
+    create_home: true
+
+- name: Data and log directories owned by the service user
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ solana_user }}"
+    group: "{{ solana_user }}"
+    mode: "0750"
+  loop:
+    - "{{ solana_ledger_dir }}"
+    - "{{ solana_accounts_dir }}"
+    - "{{ solana_snapshots_dir }}"
+    - "{{ solana_log_dir }}"
+    - "{{ solana_home }}/keys"
+    - "{{ solana_home }}/bin"
+
+- name: Kernel limits for the accounts database (persisted)
+  ansible.posix.sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value }}"
+    sysctl_file: /etc/sysctl.d/21-solana.conf
+    state: present
+    reload: true
+  loop: "{{ solana_sysctls | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}={{ item.value }}"
+
+- name: Read back the live kernel values
+  ansible.builtin.command: "sysctl -n {{ item.key }}"
+  loop: "{{ solana_sysctls | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  register: live_sysctl
+  changed_when: false
+
+- name: Fail if the kernel did not accept a limit
+  ansible.builtin.assert:
+    that: (item.stdout | int) >= (item.item.value | int)
+    fail_msg: "{{ item.item.key }} is {{ item.stdout }}, need at least {{ item.item.value }}"
+    quiet: true
+  loop: "{{ live_sysctl.results }}"
+  loop_control:
+    label: "{{ item.item.key }}={{ item.stdout }}"
+
+- name: io_uring must be available (Agave refuses to start without it on Linux)
+  ansible.builtin.command: cat /proc/sys/kernel/io_uring_disabled
+  register: io_uring_disabled
+  changed_when: false
+  failed_when: io_uring_disabled.stdout | trim != "0"

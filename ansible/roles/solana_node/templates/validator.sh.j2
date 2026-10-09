@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# {{ ansible_managed }}
+# Start script for {{ inventory_hostname }} (role: {{ solana_role }}).
+# One flag per line so a diff of this file is a readable change record.
+# The identity path is a symlink on hosts that take part in failover: it points at the staked or
+# the unstaked keypair, so a restart brings the node back in the role it had, never in both.
+# A hot spare is given the vote account by address and no --no-voting: it follows the chain with
+# an unstaked identity, cannot vote for that account, and starts voting when set-identity gives
+# it the staked identity.
+# --authorized-voter loads the key that signs votes. The vote account names the staked identity as
+# its authorized voter, and set-identity alone does not make that key available for signing: a
+# host that started with the unstaked identity would take over, look fine, and not vote. Both
+# hosts of a failover pair load it at start.
+# RPC binds to the same address as gossip (the default when --rpc-bind-address is not given):
+# the start-up port check asserts that all listeners share one IP.
+set -euo pipefail
+
+exec {{ solana_bin_dir }}/agave-validator \
+  --identity {{ solana_home }}/keys/identity.json \
+{% if solana_role in ['bootstrap', 'validator'] %}
+  --vote-account {{ solana_home }}/keys/vote-account.json \
+{% elif solana_role == 'spare' %}
+  --vote-account {{ solana_spare_vote_account }} \
+{% else %}
+  --no-voting \
+{% endif %}
+{% if solana_failover | default(false) | bool %}
+  --authorized-voter {{ solana_home }}/keys/staked-identity.json \
+{% endif %}
+  --ledger {{ solana_ledger_dir }} \
+  --accounts {{ solana_accounts_dir }} \
+  --snapshots {{ solana_snapshots_dir }} \
+  --bind-address {{ node_ip }} \
+  --gossip-port {{ solana_gossip_port }} \
+  --dynamic-port-range {{ solana_dynamic_port_range }} \
+  --rpc-port {{ solana_rpc_port }} \
+{% if solana_role == 'bootstrap' %}
+  --full-rpc-api \
+  --no-wait-for-vote-to-start-leader \
+{% else %}
+  --entrypoint {{ solana_entrypoint }} \
+{% for kv in solana_known_validators %}
+  --known-validator {{ kv }} \
+{% endfor %}
+  --only-known-rpc \
+{% endif %}
+{% if solana_expected_genesis_hash %}
+  --expected-genesis-hash {{ solana_expected_genesis_hash }} \
+{% endif %}
+{% if solana_role == 'rpc' %}
+  --full-rpc-api \
+  --enable-rpc-transaction-history \
+  --enable-extended-tx-metadata-storage \
+{% endif %}
+  --snapshot-interval-slots {{ solana_snapshot_interval_slots }} \
+  --limit-blockstore-size {{ solana_limit_blockstore_shreds }} \
+  --no-incremental-snapshots \
+{% for f in solana_lab_flags %}
+  {{ f }} \
+{% endfor %}
+  --log {{ solana_log_dir }}/validator.log

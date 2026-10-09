@@ -1,0 +1,16 @@
+# Cluster facts, recorded after the genesis ceremony (genesis.yml). Third genesis, 2026-10-09.
+# A joining node refuses any chain with a different genesis hash, and accepts a snapshot only if
+# one of the known validators published its hash in gossip.
+solana_expected_genesis_hash: "DSaqBftvKidyUoc2gU8Q8Hn4kZRMCjBhanG8Yik41Uqb"
+solana_known_validators:
+  - "CY9D3QQyTmFsbUJDBUqGDzNH5sdUSt5ERyy2mutxgsWw"   # bootstrap identity
+
+# For the exporter in full mode (rpc host). The bootstrap validator has stake from genesis;
+# validator2 is listed by vote account so the exporter also accepts it before its stake is active.
+solana_exporter_nodekeys:
+  - "CY9D3QQyTmFsbUJDBUqGDzNH5sdUSt5ERyy2mutxgsWw"
+solana_exporter_votekeys:
+  - "FoBbMS7FtC5zRDAaETmhb4YUuYmNgEcMu6h5CXMm5C95"   # validator2 vote account
+
+# Hot spare: the vote account it stands by for (validator2).
+solana_spare_vote_account: "FoBbMS7FtC5zRDAaETmhb4YUuYmNgEcMu6h5CXMm5C95"

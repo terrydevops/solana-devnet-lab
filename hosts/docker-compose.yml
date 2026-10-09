@@ -1,0 +1,85 @@
+# Four "hosts" for the production-like track. Each container runs systemd as PID 1 and is treated
+# as a server: nothing Solana-specific is defined here. Everything on the hosts is put there by
+# the Ansible role in ../ansible.
+#
+# Why privileged: systemd needs it, and Agave needs io_uring, which Docker's default seccomp
+# profile blocks.
+#
+# Separate volumes for ledger, accounts and snapshots stand in for the separate NVMe drives a
+# real validator uses.
+name: solhosts
+
+x-host: &host
+  image: geerlingguy/docker-ubuntu2404-ansible:latest
+  privileged: true
+  cgroup: host
+  volumes:
+    - /sys/fs/cgroup:/sys/fs/cgroup:rw
+  tmpfs: [/run, /tmp]
+  stop_signal: SIGRTMIN+3
+  restart: "no"
+
+services:
+  bootstrap:
+    <<: *host
+    container_name: sol-bootstrap
+    hostname: bootstrap
+    networks: { solnet: { ipv4_address: 172.30.0.11 } }
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+      - bootstrap-ledger:/mnt/ledger
+      - bootstrap-accounts:/mnt/accounts
+      - bootstrap-snapshots:/mnt/snapshots
+
+  validator2:
+    <<: *host
+    container_name: sol-validator2
+    hostname: validator2
+    networks: { solnet: { ipv4_address: 172.30.0.12 } }
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+      - validator2-ledger:/mnt/ledger
+      - validator2-accounts:/mnt/accounts
+      - validator2-snapshots:/mnt/snapshots
+
+  rpc:
+    <<: *host
+    container_name: sol-rpc
+    hostname: rpc
+    networks: { solnet: { ipv4_address: 172.30.0.13 } }
+    ports: ["8999:8899"]   # 8899 on the Mac is taken by the track A test validator
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+      - rpc-ledger:/mnt/ledger
+      - rpc-accounts:/mnt/accounts
+      - rpc-snapshots:/mnt/snapshots
+
+  spare:
+    <<: *host
+    container_name: sol-spare
+    hostname: spare
+    networks: { solnet: { ipv4_address: 172.30.0.14 } }
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+      - spare-ledger:/mnt/ledger
+      - spare-accounts:/mnt/accounts
+      - spare-snapshots:/mnt/snapshots
+
+networks:
+  solnet:
+    ipam:
+      config: [{ subnet: 172.30.0.0/24 }]
+
+volumes:
+  bootstrap-ledger:
+  bootstrap-accounts:
+  bootstrap-snapshots:
+  validator2-ledger:
+  validator2-accounts:
+  validator2-snapshots:
+  rpc-ledger:
+  rpc-accounts:
+  rpc-snapshots:
+  spare-ledger:
+  spare-accounts:
+  spare-snapshots:

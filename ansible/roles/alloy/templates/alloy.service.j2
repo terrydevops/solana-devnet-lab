@@ -1,0 +1,19 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Grafana Alloy (log shipping)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User={{ alloy_user }}
+Group={{ alloy_user }}
+ExecStart=/usr/local/bin/alloy run /etc/alloy/config.alloy \
+  --storage.path=/var/lib/alloy \
+  --server.http.listen-addr={{ node_ip }}:{{ alloy_http_port }}
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

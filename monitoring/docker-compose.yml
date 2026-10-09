@@ -1,0 +1,98 @@
+# Monitoring for the Solana cluster. Stands in for a separate monitoring host: it joins the
+# hosts' network and scrapes the agents on every node by address, the way a real monitoring
+# server would. The agents themselves (node_exporter, the chain exporters) are installed on the
+# hosts by Ansible: ../ansible/monitoring.yml.
+#
+# Same shape as eth-docker-practice/monitoring. Host ports are in the 9190 / 9193 / 3100 range so
+# both stacks can run side by side (the Ethereum one uses 9091, 9093 and 3001 on this machine).
+#
+# Retention is capped by size as well as time. The disk of this machine filled once already
+# (README, incident 2026-10-08); the monitoring stack must not be the next thing to fill it.
+name: solmon
+
+services:
+  prometheus:
+    image: "${PROMETHEUS_IMAGE:-prom/prometheus:v3.14.0}"
+    container_name: sol-prometheus
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=7d
+      - --storage.tsdb.retention.size=2GB
+      # Reload with: curl -X POST http://127.0.0.1:9190/-/reload
+      # Not with `docker kill -s HUP`: Docker then treats the container as stopped by hand and
+      # does not bring it back after a daemon restart (seen on 2026-10-08).
+      - --web.enable-lifecycle
+    ports: ["127.0.0.1:${PROMETHEUS_PORT:-9190}:9090"]
+    volumes:
+      - ./metrics/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./metrics/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus-data:/prometheus
+    networks: [solnet]
+
+  # Grouping, inhibition and severity routing live here. Without it the rules fire into the
+  # Prometheus UI and nobody hears them.
+  alertmanager:
+    image: "${ALERTMANAGER_IMAGE:-prom/alertmanager:v0.34.0}"
+    container_name: sol-alertmanager
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+    ports: ["127.0.0.1:${ALERTMANAGER_PORT:-9193}:9093"]
+    volumes:
+      - ./metrics/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager-data:/alertmanager
+    networks: [solnet]
+    mem_limit: 128m
+
+  # Stands in for Slack or PagerDuty: logs every notification and counts them, so the delivery
+  # path itself can be watched. Copied unchanged from eth-docker-practice.
+  alert-sink:
+    image: "${NODE_IMAGE:-node:26.8.1-alpine}"
+    container_name: sol-alert-sink
+    restart: unless-stopped
+    command: ["node", "/app/alert-sink.mjs"]
+    volumes:
+      - ./metrics/alertmanager/alert-sink.mjs:/app/alert-sink.mjs:ro
+    networks: [solnet]
+    mem_limit: 64m
+
+  grafana:
+    image: "${GRAFANA_IMAGE:-grafana/grafana:13.2.1}"
+    container_name: sol-grafana
+    restart: unless-stopped
+    # Lab credentials and anonymous read access. The port is bound to localhost only.
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+    ports: ["127.0.0.1:${GRAFANA_PORT:-3100}:3000"]
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    networks: [solnet]
+    depends_on: [prometheus]
+
+  # Logs. The hosts push to it by container name over the shared network.
+  loki:
+    image: "${LOKI_IMAGE:-grafana/loki:3.7.7}"
+    container_name: sol-loki
+    restart: unless-stopped
+    command: -config.file=/etc/loki/loki-config.yml
+    volumes:
+      - ./logs/loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - loki-data:/loki
+    networks: [solnet]
+    mem_limit: 512m
+
+networks:
+  solnet:
+    external: true
+    name: solhosts_solnet
+
+volumes:
+  alertmanager-data:
+  loki-data:
+  prometheus-data:

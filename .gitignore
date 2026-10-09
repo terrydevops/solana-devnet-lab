@@ -1,0 +1,8 @@
+# Chain data, logs and pid files of the single-node track
+run/
+# Official macOS release, downloaded locally
+.release/
+# Build output
+image/build.log
+__pycache__/
+.DS_Store

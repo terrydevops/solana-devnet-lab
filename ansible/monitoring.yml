@@ -1,0 +1,26 @@
+---
+# Monitoring agents on every host. Separate from site.yml so the validator role and the agents
+# can be rolled out independently:  ansible-playbook monitoring.yml
+- name: Host monitoring agents
+  hosts: solana
+  gather_facts: true
+  become: true
+  roles:
+    - node_exporter
+
+# Chain exporters, on every host that runs a validator process. The spare is one of them: it is
+# the host that matters most in the minutes after a failover.
+- name: Chain exporters
+  hosts: solana
+  gather_facts: false
+  become: true
+  roles:
+    - solana_exporter
+
+# Log shipping, on the same hosts. Needs facts for the CPU architecture.
+- name: Log shipping
+  hosts: solana
+  gather_facts: true
+  become: true
+  roles:
+    - alloy

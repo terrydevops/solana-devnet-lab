@@ -1,0 +1,86 @@
+---
+# Bring a new voting validator into the cluster: keys, funding, vote account.
+# Run for one host:  ansible-playbook join.yml --limit validator2
+# Then start it:     ansible-playbook site.yml --tags service --limit validator2 -e solana_start=true
+#
+# Three keys, three places:
+#   identity    on the validator host; signs every vote and pays the vote fees
+#   vote account  keypair only needed once, to create the account
+#   withdrawer  never leaves the operator's machine (secrets/); it can move the rewards and
+#               change the commission and the voter, so it must not sit on an online host
+- name: Join a voting validator
+  hosts: voting:!bootstrap
+  vars:
+    rpc_url: "http://172.30.0.11:8899"
+    keys: /home/sol/keys
+    local_bin: "{{ playbook_dir }}/../.release/solana-release/bin"
+    withdrawer_file: "{{ playbook_dir }}/secrets/{{ inventory_hostname }}-withdrawer.json"
+    identity_funding_sol: 100
+    commission_percent: 10
+  tasks:
+    - name: Withdrawer keypair, on the operator's machine only
+      ansible.builtin.command: "{{ local_bin }}/solana-keygen new --no-bip39-passphrase -so {{ withdrawer_file }}"
+      args: { creates: "{{ withdrawer_file }}" }
+      delegate_to: localhost
+
+    - name: Withdrawer public key
+      ansible.builtin.command: "{{ local_bin }}/solana-keygen pubkey {{ withdrawer_file }}"
+      delegate_to: localhost
+      register: withdrawer
+      changed_when: false
+
+    - name: Identity and vote-account keypairs on the host
+      ansible.builtin.command: "solana-keygen new --no-bip39-passphrase -so {{ keys }}/{{ item }}.json"
+      args: { creates: "{{ keys }}/{{ item }}.json" }
+      become: true
+      become_user: sol
+      loop: [identity, vote-account]
+
+    - name: Public keys
+      ansible.builtin.command: "solana-keygen pubkey {{ keys }}/{{ item }}.json"
+      become: true
+      become_user: sol
+      loop: [identity, vote-account]
+      register: pub
+      changed_when: false
+
+    - name: Remember them
+      ansible.builtin.set_fact:
+        identity_pubkey: "{{ pub.results[0].stdout | trim }}"
+        vote_pubkey: "{{ pub.results[1].stdout | trim }}"
+
+    - name: Identity balance
+      ansible.builtin.command: "solana -u {{ rpc_url }} balance {{ identity_pubkey }}"
+      register: balance
+      changed_when: false
+
+    - name: Fund the identity from the faucet (it pays for every vote)
+      ansible.builtin.command: >-
+        solana -u {{ rpc_url }} -k /home/sol/keys/faucet.json transfer
+        --allow-unfunded-recipient {{ identity_pubkey }} {{ identity_funding_sol }}
+      delegate_to: bootstrap
+      become: true
+      become_user: sol
+      when: (balance.stdout.split()[0] | float) < 1
+
+    - name: Does the vote account exist on chain?
+      ansible.builtin.command: "solana -u {{ rpc_url }} vote-account {{ vote_pubkey }}"
+      register: vote_account
+      changed_when: false
+      failed_when: false
+
+    - name: Create the vote account
+      ansible.builtin.command: >-
+        solana -u {{ rpc_url }} -k {{ keys }}/identity.json create-vote-account
+        {{ keys }}/vote-account.json {{ keys }}/identity.json {{ withdrawer.stdout | trim }}
+        --commission {{ commission_percent }}
+      become: true
+      become_user: sol
+      when: vote_account.rc != 0
+
+    - name: Summary
+      ansible.builtin.debug:
+        msg:
+          - "identity   {{ identity_pubkey }}"
+          - "vote       {{ vote_pubkey }}"
+          - "withdrawer {{ withdrawer.stdout | trim }} (kept in secrets/, not on the host)"

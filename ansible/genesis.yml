@@ -1,0 +1,58 @@
+---
+# One-time genesis ceremony, run on the bootstrap host. Every step is guarded with `creates`,
+# so a second run changes nothing: regenerating genesis would silently start a different chain.
+- name: Genesis ceremony
+  hosts: bootstrap
+  become: true
+  become_user: sol
+  vars:
+    keys: /home/sol/keys
+    work: /home/sol/genesis
+    # Stake of the bootstrap validator. New stake activates at a limited rate relative to the
+    # stake that is already active, so a tiny bootstrap stake (the default is about 0.5 SOL)
+    # makes every later delegation take many epochs to warm up. 10,000 SOL also keeps the
+    # bootstrap validator above two thirds of the stake, so the cluster keeps finalizing while
+    # validator2 is stopped for a drill.
+    bootstrap_stake_lamports: 10000000000000
+  tasks:
+    - name: Working directory
+      ansible.builtin.file: { path: "{{ work }}", state: directory, mode: "0750" }
+
+    - name: Keypairs (identity, vote account, stake account, faucet)
+      ansible.builtin.command: "solana-keygen new --no-bip39-passphrase -so {{ keys }}/{{ item }}.json"
+      args: { creates: "{{ keys }}/{{ item }}.json" }
+      loop: [identity, vote-account, stake-account, faucet]
+
+    - name: Core BPF programs (stake, config, address lookup table, feature gate)
+      ansible.builtin.command: /usr/local/bin/fetch-core-bpf.sh
+      args: { chdir: "{{ work }}", creates: "{{ work }}/core-bpf-genesis-args.sh" }
+
+    - name: BLS public key of the bootstrap identity
+      ansible.builtin.command: "solana-keygen bls_pubkey {{ keys }}/identity.json"
+      register: bls
+      changed_when: false
+
+    - name: Create genesis
+      ansible.builtin.shell: |
+        set -euo pipefail
+        solana-genesis \
+          --max-genesis-archive-unpacked-size 1073741824 \
+          --enable-warmup-epochs \
+          --bootstrap-validator {{ keys }}/identity.json {{ keys }}/vote-account.json {{ keys }}/stake-account.json \
+          --bootstrap-validator-bls-pubkey {{ bls.stdout | trim }} \
+          --bootstrap-validator-stake-lamports {{ bootstrap_stake_lamports }} \
+          $(cat core-bpf-genesis-args.sh) \
+          --ledger /mnt/ledger \
+          --faucet-pubkey {{ keys }}/faucet.json \
+          --faucet-lamports 500000000000000000 \
+          --hashes-per-tick sleep \
+          --cluster-type development | tee {{ work }}/genesis.out
+      args: { chdir: "{{ work }}", creates: /mnt/ledger/genesis.bin, executable: /bin/bash }
+
+    - name: Genesis summary
+      ansible.builtin.command: "cat {{ work }}/genesis.out"
+      register: gen
+      changed_when: false
+
+    - name: Show
+      ansible.builtin.debug: { var: gen.stdout_lines }

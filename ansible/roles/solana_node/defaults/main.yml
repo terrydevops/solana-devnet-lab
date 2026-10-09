@@ -1,0 +1,49 @@
+# Defaults for one Solana node. Override per group or host.
+solana_user: sol
+solana_home: /home/sol
+solana_bin_dir: /usr/local/bin
+solana_version: v4.3.0
+
+# Three paths because a production validator puts them on separate NVMe drives:
+# accounts is random-write heavy, ledger is sequential, snapshots are large periodic writes.
+solana_ledger_dir: /mnt/ledger
+solana_accounts_dir: /mnt/accounts
+solana_snapshots_dir: /mnt/snapshots
+solana_log_dir: /var/log/solana
+
+solana_gossip_port: 8001
+solana_rpc_port: 8899
+solana_dynamic_port_range: "8002-8030"
+
+# Kernel limits the accounts database needs: it memory-maps and opens a very large number of files.
+# Values are the minimums the Firedancer book lists for the Agave accounts database.
+# fs.nr_open must not go below the kernel default (1048576): systemd gives every unit a hard
+# file limit taken from that value at boot, and a unit whose limit is above fs.nr_open fails to
+# start with "Failed to adjust resource limit RLIMIT_NOFILE" (status 205/LIMITS). Seen on
+# 2026-10-08 after a restart of all hosts: the agents on two of them would not start.
+solana_sysctls:
+  vm.max_map_count: 1000000
+  fs.nr_open: 1048576
+solana_nofile_limit: 1000000
+
+# Cluster-wide values. Filled in by genesis.yml (group_vars/solana.yml) once the cluster exists.
+solana_entrypoint: "172.30.0.11:8001"
+solana_expected_genesis_hash: ""
+solana_known_validators: []
+
+# Snapshots: a development cluster takes them often so a joining node has something recent.
+solana_snapshot_interval_slots: 200
+
+# Upper bound for the ledger (blockstore), in shreds. Without a limit the ledger grows until the
+# disk is full: that stopped this cluster on 2026-10-08. 100 million is the smallest value v4.3.0
+# accepts (the default with the bare flag is 400 million). It is sized for mainnet traffic, so in
+# this lab the disk fills long before the limit is reached: here the disk alert and reset.yml are
+# the real protection, and the flag is set because a production start script must have it.
+solana_limit_blockstore_shreds: 100000000
+
+# Flags that only make sense in this lab, each with the reason.
+solana_lab_flags:
+  - "--allow-private-addr"            # hosts are on a private Docker network
+  - "--no-xdp"                        # required by --allow-private-addr; no XDP in containers
+  - "--no-poh-speed-test"             # genesis uses sleeping ticks, the speed test would fail
+  - "--no-os-network-limits-test"     # UDP buffer sysctls are not settable per container

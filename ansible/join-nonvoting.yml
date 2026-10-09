@@ -1,0 +1,11 @@
+---
+# Non-voting nodes (RPC, hot spare) need only an identity keypair: no vote account, no funding.
+# They follow the chain and serve data; they never vote, so they cost nothing to run on chain.
+- name: Identity for non-voting nodes
+  hosts: nonvoting
+  become: true
+  become_user: sol
+  tasks:
+    - name: Identity keypair
+      ansible.builtin.command: "solana-keygen new --no-bip39-passphrase -so /home/sol/keys/identity.json"
+      args: { creates: /home/sol/keys/identity.json }

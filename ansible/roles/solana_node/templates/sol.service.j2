@@ -1,0 +1,22 @@
+# {{ ansible_managed }}
+[Unit]
+Description=Solana validator ({{ solana_role }})
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User={{ solana_user }}
+Group={{ solana_user }}
+LimitNOFILE={{ solana_nofile_limit }}
+LimitMEMLOCK=infinity
+LogRateLimitIntervalSec=0
+ExecStart={{ solana_home }}/bin/validator.sh
+Restart=on-failure
+RestartSec=5
+# The validator flushes state on SIGTERM; give it time before systemd kills it.
+TimeoutStopSec=120
+
+[Install]
+WantedBy=multi-user.target
