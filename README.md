@@ -94,7 +94,7 @@ failover guide gives. Around them the playbook ([`ansible/failover.yml`](ansible
 | 1 | The old host lets go: `set-identity` to its unstaked key | The old host first, always: never two hosts on one identity |
 | 2 | The tower file moves, with a sha256 check | The record of what this identity has voted for |
 | 3 | The new host takes over: `set-identity --require-tower` | Refused without the tower |
-| 4 | `identity.json` follows on both hosts | What each host is after a restart |
+| 4 | `identity.json` follows, inside the same commands as steps 1 and 3 | What each host is after a restart: a host that has let go and then crashes must not come back with the staked key |
 | rollback | If step 3 fails, the old host takes the identity back | Otherwise nobody holds it |
 | verify | The identity has voted on a slot produced after the switch, and runs on the new host only | "The command returned 0" is not proof |
 
@@ -108,11 +108,15 @@ What the runs measured:
 | 2026-10-09 19:41 | 40% | 0.43 s | Votes took about 40 s to land again; finality paused cluster-wide for about 50 s |
 | 2026-10-09 21:18 | about 45% | 0.43 s | Waited 508 slots for a 20-slot gap; vote lag paged at 92 slots |
 | 2026-10-09 22:24 | about 45% | 0.48 s | 128 of the identity's 510 leader slots in that epoch skipped |
+| 2026-10-10 09:42, new chain | 9% | 0.44 s | Nothing: no leader slot skipped, vote lag 0 |
+| 2026-10-10 09:46 | 9% | 0.42 s | Nothing |
 
-The last rows are the honest ones. The time between the two commands went from two seconds to half
-a second; the time until votes land again did not follow, and with over a third of the stake on
-one identity the whole cluster waits for it. That share cannot occur on a real network. Why the
-new host needs that long is not yet understood. Details: [lab notes](docs/lab-notes.md).
+Read the table by the share of stake. At 9% a switch costs nothing that the monitoring can see.
+At 40% and more the time between the two commands is the same half second, but votes took tens of
+seconds to land again, finality paused for the whole cluster and a quarter of an epoch's leader
+slots went missing. That share cannot occur on a real network; it built up here because rewards
+compound. Why the new host needs that long in that situation is not yet understood.
+Details: [lab notes](docs/lab-notes.md).
 
 What three of those switches look like from the monitoring (2026-10-09, times in UTC): the green
 bar is the staked identity passing between `validator2` and `spare`, and under it the vote lag and
@@ -120,8 +124,36 @@ the delinquent mark each switch produced.
 
 ![Dashboard: which host runs the voting identity over three hours, with vote lag and delinquency at each switch](docs/img/dashboard-identity-switches.jpg)
 
-This is a planned switch between two healthy hosts. For a primary that cannot be reached, see
-[Not done](#not-done).
+### When the primary cannot be reached
+
+A switch needs the old host's cooperation. When that host is gone, or only looks gone, the spare
+has to take the identity without it, and the one thing that must not happen is that both vote.
+[`ansible/takeover.yml`](ansible/takeover.yml) follows the Anza guide for that case:
+
+```bash
+scripts/fence.sh spare                                              # 1. a person cuts the host off, from outside
+ansible-playbook takeover.yml -e from=spare -e to=validator2 -e fenced=yes
+# 2. the identity's last vote must stand still   3. the cluster must finalize past it
+# 4. take the identity; a tower left by an earlier switch is set aside   5. votes must land again
+scripts/fence.sh --lift spare                                       # refused while the host still holds the identity
+```
+
+Rehearsed once, on 2026-10-10, with the active host cut off from the network while it kept running:
+
+| | |
+|---|---|
+| Without `-e fenced=yes` | The playbook refuses and says why |
+| First attempt, right after the fence | **Refused by step 2:** the old host's last vote still moved, from slot 1586 to 1614, in the twenty seconds after it was cut off. Votes signed before the fence were still landing |
+| Second attempt | Last vote stood still at 1614; the cluster had finalized 1810; identity taken; voting again on new slots 15 s later. The playbook took 39 s, 20 of them watching |
+| From fence to verified votes | About 77 s, including the refused attempt. 16 leader slots skipped. The identity held 9% of the stake |
+| Tower | None from the old host. The validator logged "Creating a new tower from bankforks"; the copy left on this host by an earlier switch had been set aside |
+| Alerts | `VotingIdentityNotHeld` (p1), and `NodeDown` as **p1** for the fenced host: the rule still knew it had carried the staked identity. `CreditsBudgetFastBurn` (p1) fired afterwards, the first SLO alert to fire here |
+| The fenced host | Still ran the staked identity, as its console showed. Lifting the fence was refused until it was put on its unstaked key; then it rejoined as a standby in 26 s without a restart |
+| Afterwards | A normal switch in the other direction: 0.42 s, nothing skipped |
+
+Not rehearsed: a host that is powered off instead of cut off, a host that comes back by itself, and
+a takeover of an identity with more than a third of the stake, where step 3 would wait forever.
+
 
 ## What is in it
 
@@ -322,9 +354,6 @@ are not scanned, and their base images are not pinned by digest.
 
 Said plainly, because a lab invites the assumption that it covers more than it does.
 
-- **A takeover when the primary cannot be reached.** `failover.yml` is a planned switch between two
-  healthy hosts. Fencing the old host and taking over without its latest tower is described in the
-  runbooks and not yet rehearsed.
 - **An upgrade across versions.** Only one Agave version is built here, so "upgrade the spare, switch,
   upgrade the old primary" has been done as a switch, never with two binaries.
 - **Running out of identity balance.** The alerts exist; the drill has not been run.

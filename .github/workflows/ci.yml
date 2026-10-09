@@ -48,7 +48,7 @@ jobs:
           pipx install ansible-core==2.20.4
           ansible-galaxy collection install community.docker:5.1.0 ansible.posix:2.1.0
           cd ansible
-          for p in site genesis join join-nonvoting spare stake failover pair-status reset monitoring; do
+          for p in site genesis join join-nonvoting spare stake failover takeover pair-status reset monitoring; do
             ansible-playbook --syntax-check -e from=validator2 -e to=spare "$p.yml"
           done
       - name: prometheus rules and their tests

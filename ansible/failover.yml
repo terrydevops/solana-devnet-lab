@@ -127,8 +127,10 @@
 
     - name: Switch
       block:
-        # One command, so nothing runs between "the window is here" and "let go". It prints, in
-        # order: the window line, the time of letting go, the tower's checksum, the tower itself.
+        # One command, so nothing runs between "the window is here" and "let go". The link that
+        # decides what this host is after a restart changes in the same breath: a host that has
+        # let go and then crashes must not come back with the staked key. It prints, in order:
+        # the window line, the time of letting go, the tower's checksum, the tower itself.
         - name: "0 + 1. wait for a window without leader slots, then the old host lets go"
           ansible.builtin.shell: |
             set -euo pipefail
@@ -144,6 +146,7 @@
             {% endif %}
             date -u +%s.%N
             agave-validator --ledger {{ ledger }} set-identity {{ keys }}/unstaked-identity.json >/dev/null
+            ln -sfn {{ keys }}/unstaked-identity.json {{ keys }}/identity.json
             sha256sum {{ tower_file }} | cut -d' ' -f1
             base64 -w0 {{ tower_file }}
           args: { executable: /bin/bash }
@@ -159,6 +162,7 @@
             echo '{{ step1.stdout_lines[2] }}  {{ tower_file }}.incoming' | sha256sum -c --quiet
             mv {{ tower_file }}.incoming {{ tower_file }}
             agave-validator --ledger {{ ledger }} set-identity --require-tower {{ keys }}/staked-identity.json >/dev/null
+            ln -sfn {{ keys }}/staked-identity.json {{ keys }}/identity.json
             date -u +%s.%N
             solana -u {{ rpc_url }} slot
           args: { executable: /bin/bash }
@@ -170,24 +174,34 @@
         # cases: the old host still has the tower, and set-identity to the key it already runs
         # is harmless.
         - name: "ROLLBACK: the old host takes the identity back"
-          ansible.builtin.command: "agave-validator --ledger {{ ledger }} set-identity --require-tower {{ keys }}/staked-identity.json"
+          ansible.builtin.shell: |
+            set -euo pipefail
+            agave-validator --ledger {{ ledger }} set-identity --require-tower {{ keys }}/staked-identity.json
+            ln -sfn {{ keys }}/staked-identity.json {{ keys }}/identity.json
+          args: { executable: /bin/bash }
           delegate_to: "{{ from }}"
+
+        - name: "ROLLBACK: the new host is a standby again"
+          ansible.builtin.shell: |
+            agave-validator --ledger {{ ledger }} set-identity {{ keys }}/unstaked-identity.json || true
+            ln -sfn {{ keys }}/unstaked-identity.json {{ keys }}/identity.json
+          args: { executable: /bin/bash }
 
         - name: "ROLLBACK: the switch did not happen"
           ansible.builtin.fail:
             msg: "Switch aborted, {{ from }} keeps the identity. Reason: {{ ansible_failed_result.stdout_lines | default([]) | select('search', 'timeout|refused') | list | first | default(ansible_failed_result.stderr | default(ansible_failed_result.msg | default('see the log'))) }}"
 
-    - name: "4. identity.json follows the new roles"
-      ansible.builtin.file:
-        src: "{{ keys }}/{{ item.key }}-identity.json"
-        dest: "{{ keys }}/identity.json"
-        state: link
+    - name: "4. identity.json points at the new roles on both hosts"
+      ansible.builtin.command: "readlink {{ keys }}/identity.json"
       delegate_to: "{{ item.host }}"
       loop:
         - { host: "{{ from }}", key: unstaked }
         - { host: "{{ to }}", key: staked }
       loop_control:
         label: "{{ item.host }} -> {{ item.key }}"
+      register: links
+      changed_when: false
+      failed_when: (item.key ~ '-identity.json') not in links.stdout
 
     # The proof is a vote for a slot newer than the cluster tip at the switch. A vote that is only
     # newer than the last one seen before the switch proves nothing: the old host's final votes

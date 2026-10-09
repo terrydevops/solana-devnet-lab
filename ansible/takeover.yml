@@ -1,0 +1,125 @@
+---
+# Emergency takeover: the host that runs the staked identity cannot be reached, and the spare
+# takes the identity without it. Not a switch (failover.yml): nothing can be asked of the old host,
+# its latest tower cannot be copied, and whether it has stopped voting cannot be proven from here.
+#
+#   scripts/fence.sh validator2                                   # first, from outside
+#   ansible-playbook takeover.yml -e from=validator2 -e to=spare -e fenced=yes
+#
+# The order follows the Anza failover guide for a primary that is gone:
+#
+#   1. fence     a person makes sure the old host cannot vote: power or network, from outside.
+#                This playbook cannot do that and refuses to run until told it has been done.
+#   2. observe   the identity's last vote must stand still. Necessary, not sufficient: a host
+#                that is only cut off from us may still be voting to others. Hence step 1.
+#   3. wait      until the cluster has finalized past that last vote, so that whatever the old
+#                host signed and we never saw can no longer be contradicted.
+#   4. take      the spare takes the identity. No tower from the old host exists; a tower left
+#                on the spare by an earlier switch is older than the chain and is set aside.
+#   5. verify    the identity votes on new slots.
+#
+# Afterwards the old host still believes it is the primary. Before its fence is lifted it must be
+# put on its unstaked key through its console (scripts/fence.sh --lift checks this).
+- name: Emergency takeover of the staked identity
+  hosts: "{{ to }}"
+  gather_facts: false
+  become: true
+  become_user: sol
+  vars:
+    ledger: /mnt/ledger
+    keys: /home/sol/keys
+    rpc_url: "http://172.30.0.13:8899"
+    max_slots_behind: 20
+    quiet_seconds: 20          # how long the last vote must stand still
+    finalize_timeout: 300      # how long to wait for finality to pass it
+  tasks:
+    - name: "1. the old host has been fenced by a person"
+      ansible.builtin.assert:
+        that: [from is defined, to is defined, from != to, (fenced | default('no')) == 'yes']
+        fail_msg: >-
+          Fence {{ from | default('the old host') }} from outside first (power, switch port; here
+          scripts/fence.sh), then run again with -e fenced=yes. Taking the identity while the old
+          host may still vote is how two machines end up on one identity.
+        quiet: true
+
+    - name: "preflight: the staked identity"
+      ansible.builtin.command: "solana-keygen pubkey {{ keys }}/staked-identity.json"
+      register: staked_pub
+      changed_when: false
+
+    - name: Remember it
+      ansible.builtin.set_fact:
+        staked: "{{ staked_pub.stdout | trim }}"
+        tower_file: "{{ ledger }}/tower-1_9-{{ staked_pub.stdout | trim }}.bin"
+
+    - name: "preflight: this host does not hold the identity yet"
+      ansible.builtin.command: "agave-validator --ledger {{ ledger }} contact-info"
+      register: contact
+      changed_when: false
+      failed_when: staked in contact.stdout
+
+    - name: "preflight: this host is caught up"
+      ansible.builtin.shell: |
+        set -euo pipefail
+        mine=$(solana -u http://{{ node_ip }}:8899 slot)
+        tip=$(solana -u {{ rpc_url }} slot)
+        echo $((tip - mine))
+      args: { executable: /bin/bash }
+      register: behind
+      changed_when: false
+      failed_when: (behind.stdout | int) > max_slots_behind
+
+    - name: "2. the identity's last vote stands still for {{ quiet_seconds }} s"
+      ansible.builtin.shell: |
+        set -euo pipefail
+        last() { solana -u {{ rpc_url }} validators --keep-unstaked-delinquents --output json | python3 -c 'import sys,json; print([v["lastVote"] for v in json.load(sys.stdin)["validators"] if v["identityPubkey"]=="{{ staked }}"][0])'; }
+        a=$(last); sleep {{ quiet_seconds }}; b=$(last)
+        echo "$a $b"
+        [ "$a" = "$b" ]
+      args: { executable: /bin/bash }
+      register: quiet
+      changed_when: false
+
+    - name: "3. the cluster finalizes past that vote"
+      ansible.builtin.command: "solana -u http://{{ node_ip }}:8899 slot --commitment finalized"
+      register: finalized
+      changed_when: false
+      until: (finalized.stdout | int) > (quiet.stdout.split()[1] | int)
+      retries: "{{ (finalize_timeout | int / 2) | int }}"
+      delay: 2
+
+    - name: "preflight: this host can sign votes for the identity"
+      ansible.builtin.command: "agave-validator --ledger {{ ledger }} authorized-voter add {{ keys }}/staked-identity.json"
+      register: voter
+      changed_when: false
+      failed_when: voter.rc != 0 and 'already' not in (voter.stdout ~ voter.stderr)
+
+    # A tower file left here by an earlier switch says less than the vote account on chain does,
+    # and loading it would let --require-tower-style checks pass on stale data. Keep it for the
+    # record, out of the validator's way.
+    - name: "4. take the identity, without a tower from the old host"
+      ansible.builtin.shell: |
+        set -euo pipefail
+        if [ -e {{ tower_file }} ]; then mv {{ tower_file }} {{ tower_file }}.stale-$(date -u +%Y%m%dT%H%M%SZ); echo "stale tower set aside"; fi
+        agave-validator --ledger {{ ledger }} set-identity {{ keys }}/staked-identity.json >/dev/null
+        ln -sfn {{ keys }}/staked-identity.json {{ keys }}/identity.json
+        date -u +%s.%N
+        solana -u {{ rpc_url }} slot
+      args: { executable: /bin/bash }
+      register: take
+
+    - name: "5. the identity votes on slots produced after the takeover"
+      ansible.builtin.shell: "solana -u {{ rpc_url }} validators --keep-unstaked-delinquents --output json | python3 -c 'import sys,json; print([v[\"lastVote\"] for v in json.load(sys.stdin)[\"validators\"] if v[\"identityPubkey\"]==\"{{ staked }}\"][0])'"
+      register: vote_after
+      changed_when: false
+      until: (vote_after.stdout | int) > (take.stdout_lines[-1] | int) + 32
+      retries: 60
+      delay: 2
+
+    - name: Result
+      ansible.builtin.debug:
+        msg:
+          - "identity {{ staked }} taken over by {{ to }}; {{ from }} was not asked"
+          - "last vote of the old host: slot {{ quiet.stdout.split()[1] }}; finalized slot when taking over: {{ finalized.stdout | trim }}"
+          - "the identity has now voted on {{ vote_after.stdout | trim }}"
+          - "{{ from }} still believes it is the primary: put it on its unstaked key through its console before lifting the fence (scripts/fence.sh --lift {{ from }})"

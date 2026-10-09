@@ -51,6 +51,17 @@
       become_user: sol
       when: (bal.stdout.split()[0] | float) < stake_sol
 
+    # The wallet was funded through one node and is spent from through another. Until the second
+    # one has seen the transfer, creating the stake account fails with "insufficient funds".
+    - name: Wait until the RPC node sees the operator's balance
+      ansible.builtin.command: "{{ bin }}/solana -u {{ rpc_url }} balance {{ pk.results[0].stdout | trim }}"
+      delegate_to: localhost
+      register: seen
+      changed_when: false
+      until: (seen.stdout.split()[0] | float) >= stake_sol
+      retries: 30
+      delay: 2
+
     - name: Does the stake account exist?
       ansible.builtin.command: "{{ bin }}/solana -u {{ rpc_url }} stake-account {{ pk.results[1].stdout | trim }}"
       delegate_to: localhost
