@@ -342,6 +342,45 @@ then.
   known epochs. But it fills the WARN and ERROR panels, so a real error would be hard to see.
   Not filtered yet.
 
+### Fourth genesis and the takeover drill, 2026-10-10
+
+New chain (hash `4U6Q1KfuaJsFVe1edT5zXxthTEpETLaR7JVbjHwzTwau`), so that the staked identity is back
+at 9% of the stake. Three things were waiting for a running cluster:
+
+- `stake.yml` now waits until the RPC node sees the operator's balance. On the new chain the
+  delegation went through on the first run.
+- `failover.yml` changes `identity.json` inside the "let go" and "take over" commands. Two
+  switches at 9%: 0.44 s and 0.42 s without a holder, no leader slot skipped, vote lag 0. So the
+  stalls of the evening before go with the 40 to 45% share, not with the playbook.
+- `takeover.yml` and `scripts/fence.sh`, for a primary that cannot be reached.
+
+The drill, with times from the fence:
+
+| When | What |
+|---|---|
+| before | `takeover.yml` without `-e fenced=yes`: refused, as intended |
+| 0 s | `scripts/fence.sh spare`: the active host is disconnected from the network and keeps running |
+| first run | Ends at step 2: the identity's last vote was 1586 when the watch began and 1614 twenty seconds later. The host had been cut off and its last votes were still landing. The check exists for this and refused |
+| second run | Last vote stands still at 1614 for 20 s. Finalized slot 1810, well past it. The new host takes the identity; a tower file left there by an earlier switch is renamed out of the way first. Log: `Failed to load tower, file missing ... Creating a new tower from bankforks`. Verified: the identity has voted on slot 1877. 39 s for the run |
+| about 77 s | From the fence to verified votes, both runs included |
+
+- Cost: 16 leader slots skipped and about 77 seconds of votes, part of it because of the refused
+  first attempt. `CreditsBudgetFastBurn` fired afterwards.
+- Alerts delivered: `VotingIdentityNotHeld` (p1) and `NodeDown` (p1) for the fenced host. The
+  second is the role memory working outside the unit test: the exporter was unreachable, and the
+  rule still classed the host as one that carries stake. `VotingIdentityOnTwoHosts` did not fire,
+  and could not have: Prometheus could not reach the fenced host either.
+- The fenced host, from its console: still running the staked identity, link still on the staked
+  key. Had the network come back at that moment, two hosts would have run one identity.
+  `fence.sh --lift` refused. After `set-identity` to the unstaked key and the link change, the
+  fence was lifted and the host was at the tip 26 seconds later, with no restart.
+- Then a normal switch back the other way: 0.42 s, nothing skipped.
+
+What this does not show: a power-off, where the host comes back through its start script and the
+link decides; a fenced host that is reconnected by somebody else; the duplicate-instance check in
+gossip, which never got the chance to act; and an identity with more than a third of the stake,
+where the cluster cannot finalize past the old host's last vote and step 3 would time out.
+
 ## Monitoring: tests and findings
 
 Added 2026-10-09: which host runs which identity. Every host's exporter reports the identity it

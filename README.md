@@ -152,7 +152,8 @@ Rehearsed once, on 2026-10-10, with the active host cut off from the network whi
 | Afterwards | A normal switch in the other direction: 0.42 s, nothing skipped |
 
 Not rehearsed: a host that is powered off instead of cut off, a host that comes back by itself, and
-a takeover of an identity with more than a third of the stake, where step 3 would wait forever.
+a takeover of an identity with more than a third of the stake, where the cluster cannot finalize
+past the old host's last vote and step 3 gives up.
 
 
 ## What is in it
@@ -188,7 +189,7 @@ The nodes:
 | Key separation | Identity on the host; withdraw authority of the vote account and all delegator keys only on the control machine (`ansible/secrets/`, not in the repository) |
 | Trust anchors on join | `--known-validator`, `--expected-genesis-hash`, `--only-known-rpc` |
 | Voting validators and RPC nodes kept apart | `rpc` runs `--no-voting` |
-| Upgrades and failures handled by an identity switch | `spare.yml` and `failover.yml`: preflight checks, a wait for a window without leader slots, the old host lets go, the tower file moves with a checksum, the new host takes over; a failed takeover is rolled back |
+| Upgrades and failures handled by an identity switch | `spare.yml` and `failover.yml`: preflight checks, a wait for a window without leader slots, the old host lets go, the tower file moves with a checksum, the new host takes over; a failed takeover is rolled back. `takeover.yml` and `scripts/fence.sh` for a primary that cannot be reached |
 | Monitoring agents on the hosts | `node_exporter`, a chain exporter and a log shipper as systemd services |
 
 ## Running it

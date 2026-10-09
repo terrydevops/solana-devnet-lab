@@ -35,11 +35,18 @@ Do not restart either validator to "clear" it. Exercised: unit test only.
 
 1. `scripts/failover.sh --check`. If it shows an active host, the exporter is the problem, not the
    validator: see NodeDown.
-2. If neither host is active, pick the one that holds the newest tower file and is caught up, and
-   give it the identity: `set-identity --require-tower /home/sol/keys/staked-identity.json`, then
-   fix its `identity.json` link.
+2. If neither host is active and both answer, pick the one that holds the newest tower file and is
+   caught up, and give it the identity: `set-identity --require-tower /home/sol/keys/staked-identity.json`,
+   then fix its `identity.json` link.
+3. If the host that held it does not answer, this is a takeover, not a switch. Fence that host from
+   outside first (`scripts/fence.sh <host>`; on real hardware power or the switch port), then
+   `ansible-playbook takeover.yml -e from=<old> -e to=<new> -e fenced=yes`. It waits until the old
+   host's last vote stands still and the cluster has finalized past it. Do not shorten that wait.
+4. Before the old host is allowed back, put it on its unstaked key through its console.
+   `scripts/fence.sh --lift <host>` refuses otherwise.
 
-Exercised: yes, twice, by taking the identity off the primary. Fired after about 35 seconds.
+Exercised: yes. Fired after about 35 seconds when the identity was taken off the primary, and in
+the takeover drill of 2026-10-10.
 
 ## Voting
 
@@ -67,8 +74,8 @@ Do not switch while the standby is behind. Exercised: yes (stop tests, failover 
 3. A slope: host load, disk latency, network path to the leaders.
 
 The fast burn pages because a day's budget would be gone in under two hours; by then one of the
-alerts above is usually firing as well. Exercised: the ratio fell after stop tests; the burn alerts
-have not fired.
+alerts above is usually firing as well. Exercised: the fast burn fired after the takeover drill
+(about 77 seconds without votes); the slow burn has not fired.
 
 ## Block production
 
@@ -140,7 +147,8 @@ RPC node, where no stake is at risk.
 4. After a restart, expect well under a minute here: the node reuses its local snapshot and gets
    the missing slots from its peers.
 
-Exercised: yes, on the standby (five-minute stop, caught up 46 seconds after the start).
+Exercised: yes. p2 on the standby (five-minute stop, caught up 46 seconds after the start); p1 for
+a fenced host that had been running the staked identity (takeover drill).
 
 ### ValidatorServiceRestarting, ValidatorServiceNotActive
 
