@@ -281,6 +281,35 @@ Reading all 26 rules in one sitting showed what the two severities hid:
 - On a new series the tiles showed "No data" for the first minutes at a 3-hour range and filled
   in at 30 minutes. Not looked into further.
 
+### Catch-up drill, 2026-10-09 20:48 local
+
+validator2 was the standby at the time (unstaked identity), so stopping it put no stake at risk
+and the chain kept finalizing. Stopped for 301 seconds, then started.
+
+| Since the start command | What happened |
+|---|---|
+| 0 s | `sol.service` starts. The cluster had moved 1,157 slots while the node was down |
+| 1.5 s to 21 s | "Searching for an RPC service ... Wait for known rpc peers": nothing but waiting for gossip to find the known validator |
+| 21.5 s | The newest snapshot in the cluster is at slot 77776. The node holds its own at 76576 and decides: "Reusing local snapshot ... instead of downloading" |
+| 22.5 s | Snapshot loaded and bank rebuilt (0.5 s; the accounts of this chain fit in a megabyte) |
+| 27 s | RPC answers, 1,324 slots behind |
+| 46 s | Caught up (1 slot behind) |
+
+- Nearly half of the 46 seconds was the wait for gossip, not the catching up. About 1,300 slots
+  were replayed and repaired in under 20 seconds, which says nothing about mainnet: these blocks
+  hold votes only.
+- A node that has been away briefly does not download anything. It starts from its own last
+  snapshot and gets the missing slots from its peers. Whether it downloads instead depends on how
+  far its snapshot is behind the newest one on offer; the threshold was not looked up.
+- What a restart costs a staked validator is therefore not the catch-up alone but the whole
+  sequence, during which it does not vote. Here 46 seconds; with mainnet's accounts the loading
+  step alone is many minutes. That is the case for upgrading the spare and switching the identity.
+- The alerts were the new role-aware ones, and they behaved: `NodeDown` and
+  `ValidatorServiceNotActive` arrived as **p2** with "standby or RPC host: redundancy or service
+  lost, no stake at risk". Nothing paged. Both cleared after the restart.
+- Not done: a stop long enough that the local snapshot is too old and a download is needed; the
+  same drill on the host that holds the staked identity.
+
 ## Monitoring: tests and findings
 
 Added 2026-10-09: which host runs which identity. Every host's exporter reports the identity it
