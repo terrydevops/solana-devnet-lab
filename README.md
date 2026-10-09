@@ -138,7 +138,8 @@ The stack also watches itself: a dead exporter looks exactly like a quiet system
 The dashboard opens with one table, a row per validator: the host that runs the identity right
 now, stake and share, the identity balance with what it spends per day and how many days that
 lasts, the commission waiting in the vote account, vote lag, credits against the best validator
-and skip rate.
+and skip rate. Under it, the failover pair side by side: which host is active, which is standby,
+and whether the standby could take over right now. After a switch the two rows trade places.
 
 The reasoning behind each signal, with the numbers read off the running stack, is in
 [`docs/monitoring-rationale.md`](docs/monitoring-rationale.md). The dashboard is generated:

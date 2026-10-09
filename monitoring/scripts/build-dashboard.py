@@ -88,11 +88,72 @@ def glance_panel():
     }
 
 
+# The hosts of the failover pair: the primary and its hot spare.
+PAIR = 'node=~"validator2|spare"'
+IS_VOTING_ID = ("solana_node_identity{%s} and on (identity) label_replace(%s, \"identity\", \"$1\", \"nodekey\", \"(.+)\")"
+                % (PAIR, VALIDATORS))
+
+# One row per host of the pair. (column, query, kind) where kind is a unit, "label" or "state".
+PAIR_COLUMNS = [
+    ("Role now", f"max by (node) ({IS_VOTING_ID}) or max by (node) (solana_node_identity{{{PAIR}}}) * 0", "role"),
+    ("Identity it runs", f"max by (node, identity) (solana_node_identity{{{PAIR}}})", "label"),
+    ("Ready to take over", f"max by (node) ((solana_node_is_healthy{{{PAIR}}} == 1) and on (node) (solana_node_num_slots_behind{{{PAIR}}} <= 20))"
+                           f" or max by (node) (solana_node_is_healthy{{{PAIR}}}) * 0", "yesno"),
+    ("Slots behind", f"max by (node) (solana_node_num_slots_behind{{{PAIR}}})", "none"),
+    ("Healthy", f"max by (node) (solana_node_is_healthy{{{PAIR}}})", "yesno"),
+    ("Version", f"max by (node, version) (solana_node_version{{{PAIR}}})", "label"),
+    ("Service active", f'max by (node) (node_systemd_unit_state{{name="sol.service",state="active",{PAIR}}})', "yesno"),
+    ("Restarts 15m", f'max by (node) (increase(node_systemd_service_restart_total{{name="sol.service",{PAIR}}}[15m]))', "none"),
+]
+
+
+def pair_panel():
+    """Primary and hot spare side by side: which one is active, and could the other take over now."""
+    targets, rename, overrides, hide = [], {"node": "Host", "identity": "Identity it runs", "version": "Version"}, [], ["Time.*"]
+    for i, (column, expr, kind) in enumerate(PAIR_COLUMNS):
+        ref = chr(65 + i)
+        targets.append({"refId": ref, "expr": expr, "instant": True, "format": "table", "datasource": DS})
+        if kind == "label":
+            hide.append(f"Value #{ref}")
+            continue
+        rename[f"Value #{ref}"] = column
+        props = [{"id": "decimals", "value": 0}]
+        if kind == "role":
+            props += [{"id": "mappings", "value": [{"type": "value", "options": {
+                          "1": {"text": "ACTIVE: runs the staked identity", "color": "dark-green", "index": 0},
+                          "0": {"text": "standby: unstaked identity", "color": "dark-yellow", "index": 1}}}]},
+                      {"id": "custom.cellOptions", "value": {"type": "color-background"}},
+                      {"id": "custom.width", "value": 280}]
+        elif kind == "yesno":
+            props += [{"id": "mappings", "value": [{"type": "value", "options": {
+                          "1": {"text": "yes", "color": "green", "index": 0},
+                          "0": {"text": "NO", "color": "red", "index": 1}}}]},
+                      {"id": "custom.cellOptions", "value": {"type": "color-text"}}]
+        overrides.append({"matcher": {"id": "byName", "options": column}, "properties": props})
+    overrides.append({"matcher": {"id": "byName", "options": "Identity it runs"},
+                      "properties": [{"id": "custom.width", "value": 400}]})
+    return {
+        "type": "table", "title": "Failover pair: primary and hot spare", "datasource": DS, "_w": 24, "_h": 5,
+        "description": "Both hosts of the pair, whatever their role. Exactly one row may be ACTIVE. "
+                       "Ready to take over = healthy and at most 20 slots behind: for the standby this answers "
+                       "'could I switch right now'. After a switch the two rows trade places.",
+        "targets": targets,
+        "transformations": [
+            {"id": "joinByField", "options": {"byField": "node", "mode": "outer"}},
+            {"id": "filterFieldsByName", "options": {"exclude": {"pattern": "/^(" + "|".join(hide) + ")$/"}}},
+            {"id": "organize", "options": {"renameByName": rename}},
+        ],
+        "fieldConfig": {"defaults": {"custom": {"align": "auto"}}, "overrides": overrides},
+        "options": {"showHeader": True, "cellHeight": "md"},
+    }
+
+
 # (title, type, width, unit, [(expr, legend)], description[, datasource])
 # Panels read Prometheus unless a datasource is given.
 LAYERS = [
     ("Operator view: who runs the stake, what is left to pay for votes, how each validator is doing", [
         glance_panel(),
+        pair_panel(),
     ]),
     ("Layer 1: cluster. Is the chain moving and agreeing?", [
         ("Cluster root slot", "stat", 6, "none",
