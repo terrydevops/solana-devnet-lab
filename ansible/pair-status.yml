@@ -1,0 +1,32 @@
+---
+# Where the failover pair stands: which host runs the staked identity, and whether the other
+# could take it. Read-only. One line per host, meant to be read by scripts/failover.sh:
+#   PAIR host=<name> staked=<pubkey> runs=<pubkey> behind=<slots> service=<active|...>
+- name: State of the failover pair
+  hosts: solana
+  gather_facts: false
+  become: true
+  become_user: sol
+  vars:
+    rpc_url: "http://172.30.0.13:8899"
+  tasks:
+    - name: Only hosts of the pair
+      ansible.builtin.meta: end_host
+      when: not (solana_failover | default(false) | bool)
+
+    - name: Collect
+      ansible.builtin.shell: |
+        staked=$(solana-keygen pubkey /home/sol/keys/staked-identity.json 2>/dev/null || echo none)
+        service=$(systemctl is-active sol 2>/dev/null || true)
+        runs=$(agave-validator --ledger /mnt/ledger contact-info 2>/dev/null | awk '/^Identity:/ {print $2}')
+        mine=$(solana -u http://{{ node_ip }}:8899 slot 2>/dev/null || echo "")
+        tip=$(solana -u {{ rpc_url }} slot 2>/dev/null || echo "")
+        if [ -n "$mine" ] && [ -n "$tip" ]; then behind=$((tip - mine)); else behind=unknown; fi
+        echo "PAIR host={{ inventory_hostname }} staked=$staked runs=${runs:-none} behind=$behind service=${service:-unknown}"
+      args: { executable: /bin/bash }
+      register: pair
+      changed_when: false
+
+    - name: Report
+      ansible.builtin.debug:
+        msg: "{{ pair.stdout }}"

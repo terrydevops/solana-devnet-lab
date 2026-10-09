@@ -107,10 +107,11 @@ export PATH=$PWD/.release/solana-release/bin:$PATH      # from the repository ro
 solana -u http://127.0.0.1:8999 validators
 solana -u http://127.0.0.1:8999 stakes <vote account>
 
-# Move the staked identity to the spare and back, without restarting either host.
-# Prints each step as it happens; the full output goes to run/failover-<time>.log
-scripts/failover.sh validator2 spare
-scripts/failover.sh spare validator2
+# Move the staked identity to the other host of the pair, without restarting either one.
+# It asks both hosts which identity they run and switches only if exactly one holds the staked
+# identity and the other is running and caught up. Each step is printed as it happens.
+scripts/failover.sh --check      # where the pair stands; changes nothing
+scripts/failover.sh              # switch to whichever host is the standby right now
 
 # Start over: wipes ledger, accounts and snapshots on every host, keeps the keys
 ansible-playbook reset.yml -e confirm=yes
