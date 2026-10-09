@@ -11,6 +11,17 @@ it is in [`docs/lab-notes.md`](docs/lab-notes.md).
 
 ![Architecture: a control machine, four systemd hosts and a monitoring stack](docs/architecture.svg)
 
+All four nodes sync the chain. Only two of them are validators:
+
+| Host | Syncs | Votes | Has stake | Produces blocks | Also |
+|---|---|---|---|---|---|
+| `bootstrap` | yes | yes | yes, from genesis | yes | Started the chain; the others join through it |
+| `validator2` | yes | yes | yes, delegated | yes | Primary of the failover pair |
+| `spare` | yes | no | no | no | Ready to take over validator2's identity |
+| `rpc` | yes | no | no | no | Keeps transaction history, answers queries |
+
+The diagram is generated: `python3 docs/build-architecture.py`.
+
 ## What is in it
 
 | Part | What it does |
