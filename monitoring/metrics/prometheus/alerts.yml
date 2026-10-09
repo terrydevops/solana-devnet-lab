@@ -72,6 +72,18 @@ groups:
         annotations:
           summary: "cluster root slot has not advanced in 2 minutes"
 
+      # The skip-rate rules are blind when the leader-slot counters stop moving, and a blind rule
+      # looks exactly like a healthy one. Slots keep being finalized, so somebody is leader.
+      - alert: LeaderSlotCountersStalled
+        expr: >
+          sum(increase(solana_validator_leader_slots_total[10m])) == 0
+          and on () increase(max(solana_cluster_root_slot)[10m:]) > 0
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "leader slots are no longer being counted: skip rates and their alerts are blind"
+
       - alert: ClusterSkipRateHigh
         expr: solana:cluster_skip_rate:1h > 0.25
         for: 15m

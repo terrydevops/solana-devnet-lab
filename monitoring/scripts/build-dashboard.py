@@ -15,27 +15,104 @@ DS = {"type": "prometheus", "uid": "prometheus"}
 LOKI = {"type": "loki", "uid": "loki"}
 OUT = pathlib.Path(__file__).resolve().parent.parent / "grafana/dashboards/solana-overview.json"
 
+# Validator identities known to the cluster, as a `nodekey` label to join on.
+VALIDATORS = "group by (nodekey) (solana_validator_last_vote)"
+BY_ID = 'max by (nodekey) (label_replace({}, "nodekey", "$1", "address", "(.+)"))'
+
+# One row per validator: where it runs, what it holds, how it is doing. (column, query, unit, decimals)
+GLANCE = [
+    ("Runs on host", 'max by (nodekey, node) (label_replace(solana_node_identity, "nodekey", "$1", "identity", "(.+)")'
+                     f' and on (nodekey) {VALIDATORS})', None, None),
+    ("Stake (SOL)", "max by (nodekey) (solana_validator_active_stake)", "none", 0),
+    ("Share", "max by (nodekey) (solana:validator_stake_share:ratio)", "percentunit", 1),
+    ("Comm. %", "max by (nodekey) (solana_validator_commission)", "none", 0),
+    ("Identity SOL", BY_ID.format("solana:identity_balance:sol"), "none", 3),
+    ("Spend/day", BY_ID.format("-deriv(solana:identity_balance:sol[30m]) * 86400"), "none", 2),
+    ("Days left", BY_ID.format(
+        "clamp_max(solana:identity_balance:sol / clamp_min(-deriv(solana:identity_balance:sol[30m]) * 86400, 0.000001), 9999)"),
+     "none", 0),
+    ("Vote acct SOL",
+     'max by (nodekey) (label_replace(solana_account_balance, "votekey", "$1", "address", "(.+)")'
+     " * on (votekey) group_left (nodekey) group by (votekey, nodekey) (solana_validator_last_vote))", "none", 2),
+    ("Vote lag", "max by (nodekey) (solana:validator_vote_lag:slots)", "none", 0),
+    ("Credits", "max by (nodekey) (solana:validator_credits_ratio:10m)", "percentunit", 2),
+    ("Skip 1h", "max by (nodekey) (solana:validator_skip_rate:1h)", "percentunit", 2),
+    ("Delinq.", "max by (nodekey) (solana_validator_delinquent)", "none", 0),
+]
+
+
+def glance_panel():
+    """The table at the top: the questions an operator asks first, answered per validator."""
+    targets, rename, overrides, hide = [], {"nodekey": "Validator identity", "node": "Runs on host"}, [], ["Time.*"]
+    for i, (column, expr, unit, decimals) in enumerate(GLANCE):
+        ref = chr(65 + i)
+        targets.append({"refId": ref, "expr": expr, "instant": True, "format": "table", "datasource": DS})
+        if unit is None:                       # the host comes from a label; its value is always 1
+            hide.append(f"Value #{ref}")
+            continue
+        rename[f"Value #{ref}"] = column
+        overrides.append({"matcher": {"id": "byName", "options": column},
+                          "properties": [{"id": "unit", "value": unit}, {"id": "decimals", "value": decimals}]})
+
+    def thresholds(column, steps):
+        overrides.append({"matcher": {"id": "byName", "options": column}, "properties": [
+            {"id": "thresholds", "value": {"mode": "absolute", "steps": steps}},
+            {"id": "custom.cellOptions", "value": {"type": "color-text"}}]})
+
+    red, amber, green = "red", "orange", "green"
+    thresholds("Days left", [{"color": red, "value": None}, {"color": amber, "value": 3}, {"color": green, "value": 14}])
+    thresholds("Vote lag", [{"color": green, "value": None}, {"color": amber, "value": 10}, {"color": red, "value": 50}])
+    thresholds("Credits", [{"color": red, "value": None}, {"color": amber, "value": 0.9}, {"color": green, "value": 0.98}])
+    thresholds("Skip 1h", [{"color": green, "value": None}, {"color": amber, "value": 0.05}, {"color": red, "value": 0.2}])
+    thresholds("Delinq.", [{"color": green, "value": None}, {"color": red, "value": 1}])
+    overrides.append({"matcher": {"id": "byName", "options": "Validator identity"},
+                      "properties": [{"id": "custom.width", "value": 330}]})
+    overrides.append({"matcher": {"id": "byName", "options": "Runs on host"}, "properties": [
+        {"id": "custom.cellOptions", "value": {"type": "color-background"}},
+        {"id": "color", "value": {"mode": "fixed", "fixedColor": "dark-green"}}]})
+    return {
+        "type": "table", "title": "Validators at a glance", "datasource": DS, "_w": 24, "_h": 5,
+        "description": "One row per validator identity. Runs on host: the machine that runs that identity right now; "
+                       "it changes in a failover. Identity SOL pays the vote fees. Spend/day is net: vote fees "
+                       "minus block revenue. Days left = balance / spend; 9999 means the balance is not falling. "
+                       "Vote acct SOL is the commission earned and not yet withdrawn. Credits compares with the "
+                       "best validator. Skip 1h is the share of leader slots without a block.",
+        "targets": targets,
+        "transformations": [
+            {"id": "joinByField", "options": {"byField": "nodekey", "mode": "outer"}},
+            {"id": "filterFieldsByName", "options": {"exclude": {"pattern": "/^(" + "|".join(hide) + ")$/"}}},
+            {"id": "organize", "options": {"renameByName": rename}},
+        ],
+        "fieldConfig": {"defaults": {"custom": {"align": "auto"}}, "overrides": overrides},
+        "options": {"showHeader": True, "cellHeight": "md"},
+    }
+
+
 # (title, type, width, unit, [(expr, legend)], description[, datasource])
 # Panels read Prometheus unless a datasource is given.
 LAYERS = [
+    ("Operator view: who runs the stake, what is left to pay for votes, how each validator is doing", [
+        glance_panel(),
+    ]),
     ("Layer 1: cluster. Is the chain moving and agreeing?", [
-        ("Cluster root slot", "stat", 4, "none",
+        ("Cluster root slot", "stat", 6, "none",
          [("max(solana_cluster_root_slot)", "root")],
          "Newest slot that can no longer be rolled back."),
-        ("Epoch", "stat", 3, "none", [("max(solana_node_epoch_number)", "epoch")], ""),
-        ("Validators", "stat", 4, "none",
+        ("Epoch", "stat", 6, "none", [("max(solana_node_epoch_number)", "epoch")], ""),
+        ("Validators", "stat", 6, "none",
          [('solana_cluster_validator_count{state="current"}', "current"),
           ('solana_cluster_validator_count{state="delinquent"}', "delinquent")], ""),
-        ("Firing alerts", "stat", 3, "none",
-         [('count(ALERTS{alertstate="firing"}) or vector(0)', "firing")], ""),
-        ("Slots per second", "timeseries", 10, "none",
+        ("Firing alerts", "stat", 6, "none",
+         [('count(ALERTS{alertstate="firing"}) or vector(0)', "firing")],
+         "Counts alert instances, so one cause on four hosts and three volumes shows as twelve."),
+        ("Slots per second", "timeseries", 8, "none",
          [("rate(solana_node_slot_height[1m])", "{{node}}")],
          "Flat at zero means the node stopped following the chain."),
-        ("Root and last vote of the cluster", "timeseries", 12, "none",
+        ("Root and last vote of the cluster", "timeseries", 8, "none",
          [("max(solana_cluster_last_vote)", "last vote"),
           ("max(solana_cluster_root_slot)", "root")],
          "The gap between the two is how far finality trails the tip."),
-        ("Cluster skip rate, last hour", "timeseries", 12, "percentunit",
+        ("Cluster skip rate, last hour", "timeseries", 8, "percentunit",
          [("solana:cluster_skip_rate:1h", "cluster")], ""),
     ]),
     ("Layer 2: validators. Are we voting and producing our leader slots?", [
@@ -65,7 +142,7 @@ LAYERS = [
          "Voting late earns fewer credits without ever being delinquent."),
         ("Vote credits earned this epoch", "timeseries", 12, "none",
          [("solana_vote_credits_epoch", "{{nodekey}}")], "Resets at every epoch boundary."),
-        ("Active stake (SOL)", "timeseries", 12, "none",
+        ("Stake (SOL)", "timeseries", 12, "none",
          [("solana_validator_active_stake", "{{nodekey}}")],
          "Decides the share of leader slots."),
         ("Stake share of the cluster", "timeseries", 12, "percentunit",
@@ -75,7 +152,7 @@ LAYERS = [
          [("solana_validator_root_slot", "{{nodekey}}")], ""),
     ]),
     ("Layer 3: funds. Can we still pay for votes?", [
-        ("Identity balance (SOL)", "timeseries", 12, "none",
+        ("Identity SOL", "timeseries", 12, "none",
          [("solana:identity_balance:sol", "{{address}}")],
          "Every vote is paid from this account."),
         ("SOL spent per hour", "timeseries", 12, "none",
@@ -139,7 +216,19 @@ def build():
         pid += 1
         y += 1
         x, row_h = 0, 0
-        for name, kind, width, unit, targets, desc, *rest in items:
+        for item in items:
+            if isinstance(item, dict):          # a panel built by hand (the table at the top)
+                panel = {k: v for k, v in item.items() if not k.startswith("_")}
+                width, h = item["_w"], item["_h"]
+                if x + width > 24:
+                    x, y, row_h = 0, y + row_h, 0
+                panel.update({"id": pid, "gridPos": {"x": x, "y": y, "w": width, "h": h}})
+                panels.append(panel)
+                pid += 1
+                x += width
+                row_h = max(row_h, h)
+                continue
+            name, kind, width, unit, targets, desc, *rest = item
             ds = rest[0] if rest else DS
             h = HEIGHT[kind]
             if x + width > 24:
@@ -147,7 +236,8 @@ def build():
             panel = {
                 "id": pid, "type": kind, "title": name, "description": desc, "datasource": ds,
                 "gridPos": {"x": x, "y": y, "w": width, "h": h},
-                "fieldConfig": {"defaults": {"unit": unit}, "overrides": []},
+                "fieldConfig": {"defaults": {"unit": unit, **({"min": 0, "max": 1} if unit == "percentunit" and kind == "timeseries" else {})},
+                                "overrides": []},
                 "targets": [
                     {"refId": chr(65 + i), "expr": expr, "legendFormat": legend, "datasource": ds,
                      **({"instant": True, "format": "table"} if kind == "table" else {})}
@@ -180,6 +270,10 @@ if __name__ == "__main__":
     if "--exprs" in sys.argv:
         for _, items in LAYERS:
             for item in items:
+                if isinstance(item, dict):
+                    for t in item["targets"]:
+                        print(f"prometheus\t{t['expr']}")
+                    continue
                 source = "loki" if len(item) > 6 else "prometheus"
                 for expr, _ in item[4]:
                     print(f"{source}\t{expr}")

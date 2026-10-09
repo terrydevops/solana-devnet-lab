@@ -39,6 +39,21 @@
       ansible.builtin.shell: "find {{ solana_log_dir | default('/var/log/solana') }} -mindepth 1 -delete"
       changed_when: true
 
+    # The chain exporter remembers the last finalized slot it processed. A new chain starts at
+    # slot 0, below that number, so the exporter waits for a slot that will not come for hours
+    # and its leader-slot counters stand still: skip rates go blank and their alerts go blind.
+    # Seen on 2026-10-09, four hours after a reset.
+    - name: Is the chain exporter installed?
+      ansible.builtin.stat:
+        path: /etc/systemd/system/solana-exporter.service
+      register: exporter_unit
+
+    - name: Restart the chain exporter so it forgets the old chain
+      ansible.builtin.systemd:
+        name: solana-exporter.service
+        state: restarted
+      when: exporter_unit.stat.exists
+
     - name: Delete the genesis summary of the old chain
       ansible.builtin.file:
         path: /home/sol/genesis/genesis.out

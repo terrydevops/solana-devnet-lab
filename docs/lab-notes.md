@@ -198,6 +198,42 @@ account. The validator did nothing and holds none of those keys.
 - `ValidatorStakeShareDropped` is expected to open a ticket for the bootstrap validator: its
   share falls by more than a tenth without it losing any stake.
 
+### Failover hardened, 2026-10-09 evening
+
+`failover.yml` now waits for a window, checks more before it starts, and undoes a failed takeover.
+
+- **Window.** `agave-validator wait-for-restart-window` counts in minutes, and validator2 here
+  holds over a third of the stake and is leader every three seconds, so that command never returns.
+  `ansible/files/wait-for-leader-gap.py` does the same from the public leader schedule in slots
+  (default: 20 idle slots, give up after 300 s and change nothing). The official command is one
+  variable away for a real network (`-e window=official`); that path is not tested here.
+- **Fewer commands in the gap.** The window wait and "let go" are one command on the old host;
+  writing the tower, checking its sha256 and "take over" are one command on the new host.
+- **Run of 19:41 local, validator2 to spare:** waited 47 slots for a 20-slot window, then
+  **0.43 s with no holder** (1.7 to 2.0 s before), and no leader slot fell into the switch.
+- **Abort path, tested:** asked for an impossible window; the run timed out, gave the identity
+  back to the old host and failed with the reason. The cluster did not change.
+- **Not tested:** a takeover that fails after the old host has let go. The rescue is the same
+  code as above, entered from a different point.
+- **The success check had a hole.** It compared with the cluster tip read before the window wait.
+  After a long wait the old host's own votes would have satisfied it. It now uses the tip read at
+  the takeover.
+- The old way of copying the tower through an Ansible variable looked unsafe for a binary file.
+  Tested: byte-identical. It is checksummed now so it no longer depends on that.
+
+### The skip rate went blind after the reset, 2026-10-09
+
+Found four and a half hours late, while building a table that wanted the skip rate: the value was
+NaN. The chain exporter keeps the last finalized slot it processed (127,686 on the old chain); the
+new chain started at slot 0, so it logged `finalized slot number has not advanced from 127686,
+skipping` every second and its leader-slot counters stood still. `ValidatorSkipRateHigh` and
+`ClusterSkipRateHigh` could not have fired. Nothing alerted, because a rule with no data is quiet.
+
+- Fixed by restarting the exporter; `reset.yml` now does that.
+- New rule `LeaderSlotCountersStalled`: the counters do not move while roots do.
+- The failover at 19:41 happened inside the blind period, so its effect on the skip rate was not
+  recorded.
+
 ## Monitoring: tests and findings
 
 Added 2026-10-09: which host runs which identity. Every host's exporter reports the identity it

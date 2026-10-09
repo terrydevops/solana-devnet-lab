@@ -1,24 +1,29 @@
 ---
 # Move a validator's staked identity from one host to another without restarting either.
+# A planned switch between two healthy hosts: a person starts it, the playbook does every step.
 #
+#   ../scripts/failover.sh validator2 spare          # step-by-step log on the terminal
 #   ansible-playbook failover.yml -e from=validator2 -e to=spare
-#   ansible-playbook failover.yml -e from=spare -e to=validator2      # and back
 #
 # The one rule: at no moment may two machines vote with the same identity. So the order is fixed.
 #
-#   1. the old host lets go     set-identity to its unstaked key; it keeps following the chain
-#   2. the tower file moves     the record of every vote this identity has cast and its lockouts
-#   3. the new host takes over  set-identity --require-tower with the staked key
-#   4. the symlinks follow      so a reboot of either host keeps the new roles
+#   preflight   both hosts are what this run expects, and the cluster is healthy
+#   0. window   wait until the identity has no leader slot coming up
+#   1. let go   the old host switches to its unstaked key; it keeps following the chain
+#   2. tower    the record of every vote this identity has cast moves to the new host, checksummed
+#   3. take     the new host switches to the staked key, refused without the tower
+#   4. links    identity.json follows the new roles, so a reboot of either host keeps them
+#   verify      the identity has voted on a slot produced after the switch
 #
-# Between 1 and 3 nobody votes for this validator. That gap is the price of never voting twice.
-# Step 3 refuses to run without the tower file: an identity that starts voting with no memory of
-# its earlier votes can contradict them.
+# Between 1 and 3 nobody votes for this validator. That gap is the price of never voting twice,
+# so the window wait and step 1 run in one command, and steps 2 and 3 in the next: nothing else
+# happens in between.
 #
-# On mainnet step 1 is preceded by `agave-validator wait-for-restart-window`, which waits until
-# the validator has no leader slot for a while. It is off here (wait_for_window): validator2 has
-# over a tenth of the stake on a two-validator cluster, so it is leader every few seconds and an
-# idle minute never comes. The cost of skipping it is visible in the skip rate afterwards.
+# If step 3 fails, the identity is held by nobody. The rescue gives it back to the old host,
+# which still has the tower, and the run ends as failed.
+#
+# Not covered: an old host that cannot be reached. That is not a switch but a takeover: fence
+# the host from outside first (power, switch port), and decide by hand.
 - name: Identity failover
   hosts: "{{ to }}"
   gather_facts: false
@@ -28,35 +33,70 @@
     ledger: /mnt/ledger
     keys: /home/sol/keys
     rpc_url: "http://172.30.0.13:8899"
-    wait_for_window: false
     max_slots_behind: 20
+    # The window. On mainnet use the validator's own command, which thinks in minutes:
+    #   -e window=official -e min_idle_minutes=2
+    # In this lab the validator is leader every few seconds, so the wait is counted in slots.
+    window: slots
+    min_idle_slots: 20
+    min_idle_minutes: 2
+    max_delinquent_stake: 5
+    window_timeout: 300
   tasks:
-    - name: from and to must be given and differ
+    - name: "preflight: from and to are given and differ"
       ansible.builtin.assert:
         that: [from is defined, to is defined, from != to]
         quiet: true
 
-    - name: Staked identity address
+    - name: "preflight: staked identity on each host"
       ansible.builtin.command: "solana-keygen pubkey {{ keys }}/staked-identity.json"
-      register: staked_pub
+      delegate_to: "{{ item }}"
+      loop: ["{{ from }}", "{{ to }}"]
+      register: staked_pubs
       changed_when: false
 
-    - name: Which identity does each host run right now?
+    - name: "preflight: both hosts hold the same staked key"
+      ansible.builtin.assert:
+        that: staked_pubs.results[0].stdout | trim == staked_pubs.results[1].stdout | trim
+        fail_msg: "staked-identity.json differs between {{ from }} and {{ to }}. Run spare.yml."
+        quiet: true
+
+    - name: Remember the staked identity
+      ansible.builtin.set_fact:
+        staked: "{{ staked_pubs.results[0].stdout | trim }}"
+        tower_file: "{{ ledger }}/tower-1_9-{{ staked_pubs.results[0].stdout | trim }}.bin"
+
+    - name: "preflight: which identity each host runs"
       ansible.builtin.command: "agave-validator --ledger {{ ledger }} contact-info"
       delegate_to: "{{ item }}"
       loop: ["{{ from }}", "{{ to }}"]
       register: contact
       changed_when: false
 
-    - name: The old host must hold the staked identity and the new host must not
+    - name: "preflight: the old host holds the staked identity, the new host does not"
       ansible.builtin.assert:
         that:
-          - staked_pub.stdout | trim in contact.results[0].stdout
-          - staked_pub.stdout | trim not in contact.results[1].stdout
+          - staked in contact.results[0].stdout
+          - staked not in contact.results[1].stdout
         fail_msg: "Roles are not what this run expects. Check `agave-validator contact-info` on both hosts."
         quiet: true
 
-    - name: The new host must be caught up before it is trusted with the identity
+    - name: "preflight: validator version on each host"
+      ansible.builtin.command: agave-validator --version
+      delegate_to: "{{ item }}"
+      loop: ["{{ from }}", "{{ to }}"]
+      register: versions
+      changed_when: false
+
+    # A switch is how an upgrade is done, so the versions may differ on purpose: -e allow_version_change=true
+    - name: "preflight: both hosts run the same version"
+      ansible.builtin.assert:
+        that: versions.results[0].stdout == versions.results[1].stdout
+        fail_msg: "{{ from }} runs {{ versions.results[0].stdout }}, {{ to }} runs {{ versions.results[1].stdout }}"
+        quiet: true
+      when: not (allow_version_change | default(false) | bool)
+
+    - name: "preflight: the new host is caught up"
       ansible.builtin.shell: |
         set -euo pipefail
         mine=$(solana -u http://{{ node_ip }}:8899 slot)
@@ -67,54 +107,77 @@
       changed_when: false
       failed_when: (behind.stdout | int) > max_slots_behind
 
-    - name: Last vote before the switch
-      ansible.builtin.shell: "solana -u {{ rpc_url }} validators --output json | python3 -c 'import sys,json; print([v[\"lastVote\"] for v in json.load(sys.stdin)[\"validators\"] if v[\"identityPubkey\"]==\"{{ staked_pub.stdout | trim }}\"][0])'"
-      register: vote_before
-      changed_when: false
-
-    - name: Wait for a window without leader slots (mainnet practice; off in this lab)
-      ansible.builtin.command: "agave-validator --ledger {{ ledger }} wait-for-restart-window --min-idle-time 2 --skip-new-snapshot-check"
-      delegate_to: "{{ from }}"
-      when: wait_for_window | bool
-      changed_when: false
-
     # Found on the first run of this playbook (2026-10-08): without this the new host took the
     # identity, reported success, and could not sign a single vote for 88 seconds:
     # "The authorized keypair ... for vote account ... is not available. Unable to vote".
-    # The start script now loads the key with --authorized-voter; this covers a host that was
-    # started before that change. Adding a key that is already loaded is harmless.
-    - name: "0. Before anything moves: the new host must be able to sign votes"
+    # The start script loads the key with --authorized-voter; this covers a host that was started
+    # before that change. Adding a key that is already loaded is harmless.
+    - name: "preflight: the new host can sign votes for the identity"
       ansible.builtin.command: "agave-validator --ledger {{ ledger }} authorized-voter add {{ keys }}/staked-identity.json"
       register: voter
+      changed_when: false
       failed_when: voter.rc != 0 and 'already' not in (voter.stdout ~ voter.stderr)
 
-    - name: Cluster tip at the moment of the switch
-      ansible.builtin.command: "solana -u {{ rpc_url }} slot"
-      register: tip_at_switch
-      changed_when: false
-
-    - name: "1. Old host lets go: switch to its unstaked identity"
-      ansible.builtin.shell: "date -u +%s.%N && agave-validator --ledger {{ ledger }} set-identity {{ keys }}/unstaked-identity.json"
-      delegate_to: "{{ from }}"
-      register: step1
-
-    - name: "2. Read the tower file from the old host"
-      ansible.builtin.slurp:
-        src: "{{ ledger }}/tower-1_9-{{ staked_pub.stdout | trim }}.bin"
-      delegate_to: "{{ from }}"
-      register: tower
-
-    - name: "2. Write the tower file on the new host"
+    - name: "preflight: the window helper is on the old host"
       ansible.builtin.copy:
-        content: "{{ tower.content | b64decode }}"
-        dest: "{{ ledger }}/tower-1_9-{{ staked_pub.stdout | trim }}.bin"
-        mode: "0644"
+        src: wait-for-leader-gap.py
+        dest: /home/sol/bin/wait-for-leader-gap.py
+        mode: "0755"
+      delegate_to: "{{ from }}"
 
-    - name: "3. New host takes over: staked identity, refused without the tower"
-      ansible.builtin.shell: "agave-validator --ledger {{ ledger }} set-identity --require-tower {{ keys }}/staked-identity.json && date -u +%s.%N"
-      register: step3
+    - name: Switch
+      block:
+        # One command, so nothing runs between "the window is here" and "let go". It prints, in
+        # order: the window line, the time of letting go, the tower's checksum, the tower itself.
+        - name: "0 + 1. wait for a window without leader slots, then the old host lets go"
+          ansible.builtin.shell: |
+            set -euo pipefail
+            {% if window == 'official' %}
+            agave-validator --ledger {{ ledger }} wait-for-restart-window \
+              --min-idle-time {{ min_idle_minutes }} --max-delinquent-stake {{ max_delinquent_stake }} \
+              --skip-new-snapshot-check >/dev/null
+            echo "window: wait-for-restart-window passed, at least {{ min_idle_minutes }} min without a leader slot"
+            {% else %}
+            timeout {{ (window_timeout | int) + 30 }} /home/sol/bin/wait-for-leader-gap.py --url {{ rpc_url }} \
+              --identity {{ staked }} --min-idle-slots {{ min_idle_slots }} \
+              --max-delinquent-stake {{ max_delinquent_stake }} --timeout {{ window_timeout }}
+            {% endif %}
+            date -u +%s.%N
+            agave-validator --ledger {{ ledger }} set-identity {{ keys }}/unstaked-identity.json >/dev/null
+            sha256sum {{ tower_file }} | cut -d' ' -f1
+            base64 -w0 {{ tower_file }}
+          args: { executable: /bin/bash }
+          delegate_to: "{{ from }}"
+          register: step1
 
-    - name: "4. Symlinks follow the new roles"
+        # The same idea on the receiving side: write the tower, prove it is the same file, take
+        # the identity. --require-tower makes the validator itself refuse if the file is missing.
+        - name: "2 + 3. the tower arrives and is verified, then the new host takes over"
+          ansible.builtin.shell: |
+            set -euo pipefail
+            echo '{{ step1.stdout_lines[3] }}' | base64 -d > {{ tower_file }}.incoming
+            echo '{{ step1.stdout_lines[2] }}  {{ tower_file }}.incoming' | sha256sum -c --quiet
+            mv {{ tower_file }}.incoming {{ tower_file }}
+            agave-validator --ledger {{ ledger }} set-identity --require-tower {{ keys }}/staked-identity.json >/dev/null
+            date -u +%s.%N
+            solana -u {{ rpc_url }} slot
+          args: { executable: /bin/bash }
+          register: step3
+
+      rescue:
+        # Reached when the window never came (nothing has changed yet) or when the new host
+        # refused (the identity is held by nobody). Giving the identity back is right in both
+        # cases: the old host still has the tower, and set-identity to the key it already runs
+        # is harmless.
+        - name: "ROLLBACK: the old host takes the identity back"
+          ansible.builtin.command: "agave-validator --ledger {{ ledger }} set-identity --require-tower {{ keys }}/staked-identity.json"
+          delegate_to: "{{ from }}"
+
+        - name: "ROLLBACK: the switch did not happen"
+          ansible.builtin.fail:
+            msg: "Switch aborted, {{ from }} keeps the identity. Reason: {{ ansible_failed_result.stdout_lines | default([]) | select('search', 'timeout|refused') | list | first | default(ansible_failed_result.stderr | default(ansible_failed_result.msg | default('see the log'))) }}"
+
+    - name: "4. identity.json follows the new roles"
       ansible.builtin.file:
         src: "{{ keys }}/{{ item.key }}-identity.json"
         dest: "{{ keys }}/identity.json"
@@ -128,27 +191,39 @@
 
     # The proof is a vote for a slot newer than the cluster tip at the switch. A vote that is only
     # newer than the last one seen before the switch proves nothing: the old host's final votes
-    # are still landing. The first version of this check passed while nobody was voting.
-    - name: Wait until the identity has voted on a slot produced after the switch
-      ansible.builtin.shell: "solana -u {{ rpc_url }} validators --output json | python3 -c 'import sys,json; print([v[\"lastVote\"] for v in json.load(sys.stdin)[\"validators\"] if v[\"identityPubkey\"]==\"{{ staked_pub.stdout | trim }}\"][0])'"
+    # are still landing. The first version of this check passed while nobody was voting. The tip
+    # is read right after the takeover (last line of step 3), not before the window wait, which
+    # can take minutes.
+    - name: "verify: the identity has voted on a slot produced after the switch"
+      ansible.builtin.shell: "solana -u {{ rpc_url }} validators --output json | python3 -c 'import sys,json; print([v[\"lastVote\"] for v in json.load(sys.stdin)[\"validators\"] if v[\"identityPubkey\"]==\"{{ staked }}\"][0])'"
       register: vote_after
       changed_when: false
-      until: (vote_after.stdout | int) > (tip_at_switch.stdout | int) + 32
+      until: (vote_after.stdout | int) > (step3.stdout_lines[-1] | int) + 32
       retries: 45
       delay: 2
 
-    - name: Which identity does each host run now?
+    - name: "verify: which identity each host runs now"
       ansible.builtin.command: "agave-validator --ledger {{ ledger }} contact-info"
       delegate_to: "{{ item }}"
       loop: ["{{ from }}", "{{ to }}"]
       register: contact_after
       changed_when: false
 
+    - name: "verify: the identity is on the new host and on no other"
+      ansible.builtin.assert:
+        that:
+          - staked not in contact_after.results[0].stdout
+          - staked in contact_after.results[1].stdout
+        fail_msg: "After the switch the staked identity is not where it should be. Check both hosts NOW."
+        quiet: true
+
     - name: Result
       ansible.builtin.debug:
         msg:
-          - "identity {{ staked_pub.stdout | trim }} moved {{ from }} -> {{ to }}"
-          - "nobody held the identity for {{ '%.2f' | format((step3.stdout_lines[-1] | float) - (step1.stdout_lines[0] | float)) }} seconds"
-          - "cluster tip at the switch {{ tip_at_switch.stdout | trim }}, identity has now voted on {{ vote_after.stdout | trim }}"
+          - "identity {{ staked }} moved {{ from }} -> {{ to }}"
+          - "{{ step1.stdout_lines[0] }}"
+          - "nobody held the identity for {{ '%.2f' | format((step3.stdout_lines[-2] | float) - (step1.stdout_lines[1] | float)) }} seconds"
+          - "tower: {{ tower_file | basename }}, sha256 {{ step1.stdout_lines[2][:16] }}..., verified on {{ to }}"
+          - "cluster tip at the takeover {{ step3.stdout_lines[-1] | trim }}, the identity has now voted on {{ vote_after.stdout | trim }}"
           - "{{ from }} now runs: {{ contact_after.results[0].stdout_lines | select('search', 'Identity') | list | first | default('?') }}"
           - "{{ to }} now runs: {{ contact_after.results[1].stdout_lines | select('search', 'Identity') | list | first | default('?') }}"

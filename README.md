@@ -55,7 +55,7 @@ The nodes:
 | Key separation | Identity on the host; withdraw authority of the vote account and all delegator keys only on the control machine (`ansible/secrets/`, not in the repository) |
 | Trust anchors on join | `--known-validator`, `--expected-genesis-hash`, `--only-known-rpc` |
 | Voting validators and RPC nodes kept apart | `rpc` runs `--no-voting` |
-| Upgrades and failures handled by an identity switch | `spare.yml` and `failover.yml`: the old host lets go, the tower file moves, the new host takes over |
+| Upgrades and failures handled by an identity switch | `spare.yml` and `failover.yml`: preflight checks, a wait for a window without leader slots, the old host lets go, the tower file moves with a checksum, the new host takes over; a failed takeover is rolled back |
 | Monitoring agents on the hosts | `node_exporter`, a chain exporter and a log shipper as systemd services |
 
 ## Running it
@@ -99,9 +99,10 @@ export PATH=$PWD/.release/solana-release/bin:$PATH      # from the repository ro
 solana -u http://127.0.0.1:8999 validators
 solana -u http://127.0.0.1:8999 stakes <vote account>
 
-# Move the staked identity to the spare and back, without restarting either host
-ansible-playbook failover.yml -e from=validator2 -e to=spare
-ansible-playbook failover.yml -e from=spare -e to=validator2
+# Move the staked identity to the spare and back, without restarting either host.
+# Prints each step as it happens; the full output goes to run/failover-<time>.log
+scripts/failover.sh validator2 spare
+scripts/failover.sh spare validator2
 
 # Start over: wipes ledger, accounts and snapshots on every host, keeps the keys
 ansible-playbook reset.yml -e confirm=yes
@@ -129,6 +130,11 @@ container's own filesystem, only `/mnt/*` is on volumes.
 
 Two severities, page and ticket. Inhibit rules make the cause page and keep its symptoms quiet.
 The stack also watches itself: a dead exporter looks exactly like a quiet system.
+
+The dashboard opens with one table, a row per validator: the host that runs the identity right
+now, stake and share, the identity balance with what it spends per day and how many days that
+lasts, the commission waiting in the vote account, vote lag, credits against the best validator
+and skip rate.
 
 The reasoning behind each signal, with the numbers read off the running stack, is in
 [`docs/monitoring-rationale.md`](docs/monitoring-rationale.md). The dashboard is generated:
@@ -170,7 +176,8 @@ Details and the rest are in the [lab notes](docs/lab-notes.md).
 - **A playbook can report a successful failover while nobody votes.** `set-identity` moves the
   identity but not the key that signs votes, and the first success check was satisfied by the old
   host's last votes. The spare did not vote for 88 seconds; the monitoring noticed, the playbook
-  did not. After the fix a switch leaves the identity unheld for under two seconds.
+  did not. After the fix a switch left the identity unheld for under two seconds; with the window
+  wait and the two halves each run as one command, 0.43 seconds.
 - **`Restart=on-failure` hides a crash loop.** When the disk filled, systemd restarted one service
   4,102 times and everything looked "active". Hence an alert on the restart count.
 - **The ledger limit does not protect a small disk.** The smallest value Agave 4.3 accepts is 100

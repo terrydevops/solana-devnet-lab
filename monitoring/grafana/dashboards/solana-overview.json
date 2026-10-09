@@ -17,7 +17,7 @@
     {
       "id": 1,
       "type": "row",
-      "title": "Layer 1: cluster. Is the chain moving and agreeing?",
+      "title": "Operator view: who runs the stake, what is left to pay for votes, how each validator is doing",
       "collapsed": false,
       "gridPos": {
         "x": 0,
@@ -27,7 +27,582 @@
       }
     },
     {
+      "type": "table",
+      "title": "Validators at a glance",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "One row per validator identity. Runs on host: the machine that runs that identity right now; it changes in a failover. Identity SOL pays the vote fees. Spend/day is net: vote fees minus block revenue. Days left = balance / spend; 9999 means the balance is not falling. Vote acct SOL is the commission earned and not yet withdrawn. Credits compares with the best validator. Skip 1h is the share of leader slots without a block.",
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (nodekey, node) (label_replace(solana_node_identity, \"nodekey\", \"$1\", \"identity\", \"(.+)\") and on (nodekey) group by (nodekey) (solana_validator_last_vote))",
+          "instant": true,
+          "format": "table",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "max by (nodekey) (solana_validator_active_stake)",
+          "instant": true,
+          "format": "table",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        },
+        {
+          "refId": "C",
+          "expr": "max by (nodekey) (solana:validator_stake_share:ratio)",
+          "instant": true,
+          "format": "table",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        },
+        {
+          "refId": "D",
+          "expr": "max by (nodekey) (solana_validator_commission)",
+          "instant": true,
+          "format": "table",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        },
+        {
+          "refId": "E",
+          "expr": "max by (nodekey) (label_replace(solana:identity_balance:sol, \"nodekey\", \"$1\", \"address\", \"(.+)\"))",
+          "instant": true,
+          "format": "table",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        },
+        {
+          "refId": "F",
+          "expr": "max by (nodekey) (label_replace(-deriv(solana:identity_balance:sol[30m]) * 86400, \"nodekey\", \"$1\", \"address\", \"(.+)\"))",
+          "instant": true,
+          "format": "table",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        },
+        {
+          "refId": "G",
+          "expr": "max by (nodekey) (label_replace(clamp_max(solana:identity_balance:sol / clamp_min(-deriv(solana:identity_balance:sol[30m]) * 86400, 0.000001), 9999), \"nodekey\", \"$1\", \"address\", \"(.+)\"))",
+          "instant": true,
+          "format": "table",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        },
+        {
+          "refId": "H",
+          "expr": "max by (nodekey) (label_replace(solana_account_balance, \"votekey\", \"$1\", \"address\", \"(.+)\") * on (votekey) group_left (nodekey) group by (votekey, nodekey) (solana_validator_last_vote))",
+          "instant": true,
+          "format": "table",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        },
+        {
+          "refId": "I",
+          "expr": "max by (nodekey) (solana:validator_vote_lag:slots)",
+          "instant": true,
+          "format": "table",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        },
+        {
+          "refId": "J",
+          "expr": "max by (nodekey) (solana:validator_credits_ratio:10m)",
+          "instant": true,
+          "format": "table",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        },
+        {
+          "refId": "K",
+          "expr": "max by (nodekey) (solana:validator_skip_rate:1h)",
+          "instant": true,
+          "format": "table",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        },
+        {
+          "refId": "L",
+          "expr": "max by (nodekey) (solana_validator_delinquent)",
+          "instant": true,
+          "format": "table",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        }
+      ],
+      "transformations": [
+        {
+          "id": "joinByField",
+          "options": {
+            "byField": "nodekey",
+            "mode": "outer"
+          }
+        },
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "exclude": {
+              "pattern": "/^(Time.*|Value #A)$/"
+            }
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "renameByName": {
+              "nodekey": "Validator identity",
+              "node": "Runs on host",
+              "Value #B": "Stake (SOL)",
+              "Value #C": "Share",
+              "Value #D": "Comm. %",
+              "Value #E": "Identity SOL",
+              "Value #F": "Spend/day",
+              "Value #G": "Days left",
+              "Value #H": "Vote acct SOL",
+              "Value #I": "Vote lag",
+              "Value #J": "Credits",
+              "Value #K": "Skip 1h",
+              "Value #L": "Delinq."
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Stake (SOL)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Share"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Comm. %"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Identity SOL"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 3
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Spend/day"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Days left"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Vote acct SOL"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Vote lag"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Credits"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Skip 1h"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Delinq."
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Days left"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 3
+                    },
+                    {
+                      "color": "green",
+                      "value": 14
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Vote lag"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 10
+                    },
+                    {
+                      "color": "red",
+                      "value": 50
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Credits"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 0.9
+                    },
+                    {
+                      "color": "green",
+                      "value": 0.98
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Skip 1h"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 0.05
+                    },
+                    {
+                      "color": "red",
+                      "value": 0.2
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Delinq."
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "red",
+                      "value": 1
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Validator identity"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 330
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Runs on host"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "dark-green"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "md"
+      },
       "id": 2,
+      "gridPos": {
+        "x": 0,
+        "y": 1,
+        "w": 24,
+        "h": 5
+      }
+    },
+    {
+      "id": 3,
+      "type": "row",
+      "title": "Layer 1: cluster. Is the chain moving and agreeing?",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 6,
+        "w": 24,
+        "h": 1
+      }
+    },
+    {
+      "id": 4,
       "type": "stat",
       "title": "Cluster root slot",
       "description": "Newest slot that can no longer be rolled back.",
@@ -37,8 +612,8 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 1,
-        "w": 4,
+        "y": 7,
+        "w": 6,
         "h": 4
       },
       "fieldConfig": {
@@ -69,7 +644,7 @@
       }
     },
     {
-      "id": 3,
+      "id": 5,
       "type": "stat",
       "title": "Epoch",
       "description": "",
@@ -78,9 +653,9 @@
         "uid": "prometheus"
       },
       "gridPos": {
-        "x": 4,
-        "y": 1,
-        "w": 3,
+        "x": 6,
+        "y": 7,
+        "w": 6,
         "h": 4
       },
       "fieldConfig": {
@@ -111,7 +686,7 @@
       }
     },
     {
-      "id": 4,
+      "id": 6,
       "type": "stat",
       "title": "Validators",
       "description": "",
@@ -120,9 +695,9 @@
         "uid": "prometheus"
       },
       "gridPos": {
-        "x": 7,
-        "y": 1,
-        "w": 4,
+        "x": 12,
+        "y": 7,
+        "w": 6,
         "h": 4
       },
       "fieldConfig": {
@@ -162,18 +737,18 @@
       }
     },
     {
-      "id": 5,
+      "id": 7,
       "type": "stat",
       "title": "Firing alerts",
-      "description": "",
+      "description": "Counts alert instances, so one cause on four hosts and three volumes shows as twelve.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "gridPos": {
-        "x": 11,
-        "y": 1,
-        "w": 3,
+        "x": 18,
+        "y": 7,
+        "w": 6,
         "h": 4
       },
       "fieldConfig": {
@@ -204,7 +779,7 @@
       }
     },
     {
-      "id": 6,
+      "id": 8,
       "type": "timeseries",
       "title": "Slots per second",
       "description": "Flat at zero means the node stopped following the chain.",
@@ -213,9 +788,9 @@
         "uid": "prometheus"
       },
       "gridPos": {
-        "x": 14,
-        "y": 1,
-        "w": 10,
+        "x": 0,
+        "y": 11,
+        "w": 8,
         "h": 8
       },
       "fieldConfig": {
@@ -237,7 +812,7 @@
       ]
     },
     {
-      "id": 7,
+      "id": 9,
       "type": "timeseries",
       "title": "Root and last vote of the cluster",
       "description": "The gap between the two is how far finality trails the tip.",
@@ -246,9 +821,9 @@
         "uid": "prometheus"
       },
       "gridPos": {
-        "x": 0,
-        "y": 9,
-        "w": 12,
+        "x": 8,
+        "y": 11,
+        "w": 8,
         "h": 8
       },
       "fieldConfig": {
@@ -279,7 +854,7 @@
       ]
     },
     {
-      "id": 8,
+      "id": 10,
       "type": "timeseries",
       "title": "Cluster skip rate, last hour",
       "description": "",
@@ -288,14 +863,16 @@
         "uid": "prometheus"
       },
       "gridPos": {
-        "x": 12,
-        "y": 9,
-        "w": 12,
+        "x": 16,
+        "y": 11,
+        "w": 8,
         "h": 8
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "percentunit"
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1
         },
         "overrides": []
       },
@@ -312,19 +889,19 @@
       ]
     },
     {
-      "id": 9,
+      "id": 11,
       "type": "row",
       "title": "Layer 2: validators. Are we voting and producing our leader slots?",
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 17,
+        "y": 19,
         "w": 24,
         "h": 1
       }
     },
     {
-      "id": 10,
+      "id": 12,
       "type": "state-timeline",
       "title": "Which host runs a voting identity",
       "description": "One row per host. A failover shows as two rows changing colour at the same moment.",
@@ -334,7 +911,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 18,
+        "y": 20,
         "w": 16,
         "h": 4
       },
@@ -386,7 +963,7 @@
       }
     },
     {
-      "id": 11,
+      "id": 13,
       "type": "stat",
       "title": "Hosts per voting identity",
       "description": "Must be 1. 2 pages at once (VotingIdentityOnTwoHosts); missing pages after 30 s.",
@@ -396,7 +973,7 @@
       },
       "gridPos": {
         "x": 16,
-        "y": 18,
+        "y": 20,
         "w": 8,
         "h": 4
       },
@@ -428,7 +1005,7 @@
       }
     },
     {
-      "id": 12,
+      "id": 14,
       "type": "table",
       "title": "Identity each host runs",
       "description": "",
@@ -438,7 +1015,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 22,
+        "y": 24,
         "w": 24,
         "h": 8
       },
@@ -463,7 +1040,7 @@
       ]
     },
     {
-      "id": 13,
+      "id": 15,
       "type": "timeseries",
       "title": "Vote lag behind the cluster (slots)",
       "description": "ValidatorVoteLagging pages above 50.",
@@ -473,7 +1050,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 30,
+        "y": 32,
         "w": 12,
         "h": 8
       },
@@ -496,7 +1073,7 @@
       ]
     },
     {
-      "id": 14,
+      "id": 16,
       "type": "timeseries",
       "title": "Delinquent",
       "description": "1 = the cluster marks this validator as delinquent.",
@@ -506,7 +1083,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 30,
+        "y": 32,
         "w": 12,
         "h": 8
       },
@@ -529,7 +1106,7 @@
       ]
     },
     {
-      "id": 15,
+      "id": 17,
       "type": "timeseries",
       "title": "Skip rate per validator, last hour",
       "description": "",
@@ -539,13 +1116,15 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 38,
+        "y": 40,
         "w": 12,
         "h": 8
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "percentunit"
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1
         },
         "overrides": []
       },
@@ -562,7 +1141,7 @@
       ]
     },
     {
-      "id": 16,
+      "id": 18,
       "type": "timeseries",
       "title": "Leader slots per minute",
       "description": "",
@@ -572,7 +1151,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 38,
+        "y": 40,
         "w": 12,
         "h": 8
       },
@@ -595,7 +1174,7 @@
       ]
     },
     {
-      "id": 17,
+      "id": 19,
       "type": "timeseries",
       "title": "Vote credits, share of the best validator",
       "description": "Voting late earns fewer credits without ever being delinquent.",
@@ -605,13 +1184,15 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 46,
+        "y": 48,
         "w": 12,
         "h": 8
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "percentunit"
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1
         },
         "overrides": []
       },
@@ -628,7 +1209,7 @@
       ]
     },
     {
-      "id": 18,
+      "id": 20,
       "type": "timeseries",
       "title": "Vote credits earned this epoch",
       "description": "Resets at every epoch boundary.",
@@ -638,7 +1219,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 46,
+        "y": 48,
         "w": 12,
         "h": 8
       },
@@ -661,9 +1242,9 @@
       ]
     },
     {
-      "id": 19,
+      "id": 21,
       "type": "timeseries",
-      "title": "Active stake (SOL)",
+      "title": "Stake (SOL)",
       "description": "Decides the share of leader slots.",
       "datasource": {
         "type": "prometheus",
@@ -671,7 +1252,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 54,
+        "y": 56,
         "w": 12,
         "h": 8
       },
@@ -694,7 +1275,7 @@
       ]
     },
     {
-      "id": 20,
+      "id": 22,
       "type": "timeseries",
       "title": "Stake share of the cluster",
       "description": "The share decides the leader slots. ValidatorStakeShareDropped opens a ticket.",
@@ -704,13 +1285,15 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 54,
+        "y": 56,
         "w": 12,
         "h": 8
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "percentunit"
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1
         },
         "overrides": []
       },
@@ -727,7 +1310,7 @@
       ]
     },
     {
-      "id": 21,
+      "id": 23,
       "type": "timeseries",
       "title": "Root slot per validator",
       "description": "",
@@ -737,7 +1320,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 62,
+        "y": 64,
         "w": 12,
         "h": 8
       },
@@ -760,21 +1343,21 @@
       ]
     },
     {
-      "id": 22,
+      "id": 24,
       "type": "row",
       "title": "Layer 3: funds. Can we still pay for votes?",
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 70,
+        "y": 72,
         "w": 24,
         "h": 1
       }
     },
     {
-      "id": 23,
+      "id": 25,
       "type": "timeseries",
-      "title": "Identity balance (SOL)",
+      "title": "Identity SOL",
       "description": "Every vote is paid from this account.",
       "datasource": {
         "type": "prometheus",
@@ -782,7 +1365,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 71,
+        "y": 73,
         "w": 12,
         "h": 8
       },
@@ -805,7 +1388,7 @@
       ]
     },
     {
-      "id": 24,
+      "id": 26,
       "type": "timeseries",
       "title": "SOL spent per hour",
       "description": "Positive = the balance is falling. Balance divided by this is the hours left.",
@@ -815,7 +1398,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 71,
+        "y": 73,
         "w": 12,
         "h": 8
       },
@@ -838,19 +1421,19 @@
       ]
     },
     {
-      "id": 25,
+      "id": 27,
       "type": "row",
       "title": "Layer 4: nodes. Is each node healthy and caught up?",
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 79,
+        "y": 81,
         "w": 24,
         "h": 1
       }
     },
     {
-      "id": 26,
+      "id": 28,
       "type": "stat",
       "title": "Healthy",
       "description": "getHealth as seen from the node itself.",
@@ -860,7 +1443,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 80,
+        "y": 82,
         "w": 8,
         "h": 4
       },
@@ -892,7 +1475,7 @@
       }
     },
     {
-      "id": 27,
+      "id": 29,
       "type": "timeseries",
       "title": "Slots behind",
       "description": "",
@@ -902,7 +1485,7 @@
       },
       "gridPos": {
         "x": 8,
-        "y": 80,
+        "y": 82,
         "w": 8,
         "h": 8
       },
@@ -925,7 +1508,7 @@
       ]
     },
     {
-      "id": 28,
+      "id": 30,
       "type": "table",
       "title": "Version",
       "description": "",
@@ -935,7 +1518,7 @@
       },
       "gridPos": {
         "x": 16,
-        "y": 80,
+        "y": 82,
         "w": 8,
         "h": 8
       },
@@ -960,19 +1543,19 @@
       ]
     },
     {
-      "id": 29,
+      "id": 31,
       "type": "row",
       "title": "Layer 5: foundation. Hosts, services and the monitoring itself",
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 88,
+        "y": 90,
         "w": 24,
         "h": 1
       }
     },
     {
-      "id": 30,
+      "id": 32,
       "type": "timeseries",
       "title": "Free space on the ledger volume",
       "description": "All hosts share one disk in this lab, so the lines overlap.",
@@ -982,7 +1565,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 89,
+        "y": 91,
         "w": 12,
         "h": 8
       },
@@ -1005,7 +1588,7 @@
       ]
     },
     {
-      "id": 31,
+      "id": 33,
       "type": "timeseries",
       "title": "Hours until the disk is full, at the rate of the last hour",
       "description": "The same idea as HostDiskWillFillSoon, shown as a number.",
@@ -1015,7 +1598,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 89,
+        "y": 91,
         "w": 12,
         "h": 8
       },
@@ -1038,7 +1621,7 @@
       ]
     },
     {
-      "id": 32,
+      "id": 34,
       "type": "timeseries",
       "title": "sol.service restarts in the last 15 minutes",
       "description": "Restart=on-failure hides a crash loop; this shows it.",
@@ -1048,7 +1631,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 97,
+        "y": 99,
         "w": 8,
         "h": 8
       },
@@ -1071,7 +1654,7 @@
       ]
     },
     {
-      "id": 33,
+      "id": 35,
       "type": "stat",
       "title": "sol.service active",
       "description": "The spare host is expected to show 0.",
@@ -1081,7 +1664,7 @@
       },
       "gridPos": {
         "x": 8,
-        "y": 97,
+        "y": 99,
         "w": 8,
         "h": 4
       },
@@ -1113,7 +1696,7 @@
       }
     },
     {
-      "id": 34,
+      "id": 36,
       "type": "timeseries",
       "title": "Memory available",
       "description": "",
@@ -1123,13 +1706,15 @@
       },
       "gridPos": {
         "x": 16,
-        "y": 97,
+        "y": 99,
         "w": 8,
         "h": 8
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "percentunit"
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1
         },
         "overrides": []
       },
@@ -1146,7 +1731,7 @@
       ]
     },
     {
-      "id": 35,
+      "id": 37,
       "type": "timeseries",
       "title": "Scrape targets up",
       "description": "A dead exporter looks exactly like a quiet system.",
@@ -1156,7 +1741,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 105,
+        "y": 107,
         "w": 12,
         "h": 8
       },
@@ -1179,7 +1764,7 @@
       ]
     },
     {
-      "id": 36,
+      "id": 38,
       "type": "timeseries",
       "title": "Notifications delivered to the sink",
       "description": "",
@@ -1189,7 +1774,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 105,
+        "y": 107,
         "w": 12,
         "h": 8
       },
@@ -1212,19 +1797,19 @@
       ]
     },
     {
-      "id": 37,
+      "id": 39,
       "type": "row",
       "title": "Logs. What the validators say about it",
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 113,
+        "y": 115,
         "w": 24,
         "h": 1
       }
     },
     {
-      "id": 38,
+      "id": 40,
       "type": "timeseries",
       "title": "Warnings and errors per minute",
       "description": "From the validator log files, shipped by Alloy.",
@@ -1234,7 +1819,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 114,
+        "y": 116,
         "w": 12,
         "h": 8
       },
@@ -1257,7 +1842,7 @@
       ]
     },
     {
-      "id": 39,
+      "id": 41,
       "type": "timeseries",
       "title": "Log lines per second",
       "description": "A validator that stops logging has stopped.",
@@ -1267,7 +1852,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 114,
+        "y": 116,
         "w": 12,
         "h": 8
       },
@@ -1290,7 +1875,7 @@
       ]
     },
     {
-      "id": 40,
+      "id": 42,
       "type": "logs",
       "title": "Errors",
       "description": "",
@@ -1300,7 +1885,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 122,
+        "y": 124,
         "w": 24,
         "h": 8
       },
@@ -1323,7 +1908,7 @@
       ]
     },
     {
-      "id": 41,
+      "id": 43,
       "type": "logs",
       "title": "systemd journal of sol.service",
       "description": "What the start script printed before the validator opened its own log.",
@@ -1333,7 +1918,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 130,
+        "y": 132,
         "w": 24,
         "h": 8
       },
