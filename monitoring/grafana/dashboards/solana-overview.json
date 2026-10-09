@@ -1003,7 +1003,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "max(solana_node_epoch_number)",
+          "expr": "max(solana_node_epoch_number{node=~\"$node\"})",
           "legendFormat": "epoch",
           "datasource": {
             "type": "prometheus",
@@ -1138,7 +1138,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "rate(solana_node_slot_height[1m])",
+          "expr": "rate(solana_node_slot_height{node=~\"$node\"}[1m])",
           "legendFormat": "{{node}}",
           "datasource": {
             "type": "prometheus",
@@ -1281,7 +1281,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "max by (node) (solana_node_identity and on (identity) label_replace(group by (nodekey) (solana_validator_last_vote), \"identity\", \"$1\", \"nodekey\", \"(.+)\")) or max by (node) (solana_node_identity) * 0",
+          "expr": "max by (node) (solana_node_identity{node=~\"$node\"} and on (identity) label_replace(group by (nodekey) (solana_validator_last_vote), \"identity\", \"$1\", \"nodekey\", \"(.+)\")) or max by (node) (solana_node_identity{node=~\"$node\"}) * 0",
           "legendFormat": "{{node}}",
           "datasource": {
             "type": "prometheus",
@@ -1364,7 +1364,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "count by (node, role, identity) (solana_node_identity)",
+          "expr": "count by (node, role, identity) (solana_node_identity{node=~\"$node\"})",
           "legendFormat": "",
           "datasource": {
             "type": "prometheus",
@@ -1399,8 +1399,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "solana:validator_vote_lag:slots",
-          "legendFormat": "{{nodekey}}",
+          "expr": "max by (nodekey) (solana:validator_vote_lag:slots) * on (nodekey) group_left (node) max by (nodekey, node) (label_replace(solana_node_identity{node=~\"$node\"}, \"nodekey\", \"$1\", \"identity\", \"(.+)\") and on (nodekey) group by (nodekey) (solana_validator_last_vote{nodekey=~\"$identity\"}))",
+          "legendFormat": "{{node}}: {{nodekey}}",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
@@ -1432,8 +1432,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "solana_validator_delinquent",
-          "legendFormat": "{{nodekey}}",
+          "expr": "max by (nodekey) (solana_validator_delinquent) * on (nodekey) group_left (node) max by (nodekey, node) (label_replace(solana_node_identity{node=~\"$node\"}, \"nodekey\", \"$1\", \"identity\", \"(.+)\") and on (nodekey) group by (nodekey) (solana_validator_last_vote{nodekey=~\"$identity\"}))",
+          "legendFormat": "{{node}}: {{nodekey}}",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
@@ -1467,8 +1467,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "solana:validator_skip_rate:1h",
-          "legendFormat": "{{nodekey}}",
+          "expr": "max by (nodekey) (solana:validator_skip_rate:1h) * on (nodekey) group_left (node) max by (nodekey, node) (label_replace(solana_node_identity{node=~\"$node\"}, \"nodekey\", \"$1\", \"identity\", \"(.+)\") and on (nodekey) group by (nodekey) (solana_validator_last_vote{nodekey=~\"$identity\"}))",
+          "legendFormat": "{{node}}: {{nodekey}}",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
@@ -1500,8 +1500,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (nodekey, status) (rate(solana_validator_leader_slots_total[5m])) * 60",
-          "legendFormat": "{{nodekey}} {{status}}",
+          "expr": "(sum by (nodekey, status) (rate(solana_validator_leader_slots_total[5m])) * 60) * on (nodekey) group_left (node) max by (nodekey, node) (label_replace(solana_node_identity{node=~\"$node\"}, \"nodekey\", \"$1\", \"identity\", \"(.+)\") and on (nodekey) group by (nodekey) (solana_validator_last_vote{nodekey=~\"$identity\"}))",
+          "legendFormat": "{{node}}: {{nodekey}} {{status}}",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
@@ -1535,8 +1535,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "solana:validator_credits_ratio:10m",
-          "legendFormat": "{{nodekey}}",
+          "expr": "max by (nodekey) (solana:validator_credits_ratio:10m) * on (nodekey) group_left (node) max by (nodekey, node) (label_replace(solana_node_identity{node=~\"$node\"}, \"nodekey\", \"$1\", \"identity\", \"(.+)\") and on (nodekey) group by (nodekey) (solana_validator_last_vote{nodekey=~\"$identity\"}))",
+          "legendFormat": "{{node}}: {{nodekey}}",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
@@ -1568,8 +1568,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "solana_vote_credits_epoch",
-          "legendFormat": "{{nodekey}}",
+          "expr": "max by (nodekey) (solana_vote_credits_epoch) * on (nodekey) group_left (node) max by (nodekey, node) (label_replace(solana_node_identity{node=~\"$node\"}, \"nodekey\", \"$1\", \"identity\", \"(.+)\") and on (nodekey) group by (nodekey) (solana_validator_last_vote{nodekey=~\"$identity\"}))",
+          "legendFormat": "{{node}}: {{nodekey}}",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
@@ -1601,8 +1601,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "solana_validator_active_stake",
-          "legendFormat": "{{nodekey}}",
+          "expr": "max by (nodekey) (solana_validator_active_stake) * on (nodekey) group_left (node) max by (nodekey, node) (label_replace(solana_node_identity{node=~\"$node\"}, \"nodekey\", \"$1\", \"identity\", \"(.+)\") and on (nodekey) group by (nodekey) (solana_validator_last_vote{nodekey=~\"$identity\"}))",
+          "legendFormat": "{{node}}: {{nodekey}}",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
@@ -1636,8 +1636,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "solana:validator_stake_share:ratio",
-          "legendFormat": "{{nodekey}}",
+          "expr": "max by (nodekey) (solana:validator_stake_share:ratio) * on (nodekey) group_left (node) max by (nodekey, node) (label_replace(solana_node_identity{node=~\"$node\"}, \"nodekey\", \"$1\", \"identity\", \"(.+)\") and on (nodekey) group by (nodekey) (solana_validator_last_vote{nodekey=~\"$identity\"}))",
+          "legendFormat": "{{node}}: {{nodekey}}",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
@@ -1669,8 +1669,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "solana_validator_root_slot",
-          "legendFormat": "{{nodekey}}",
+          "expr": "max by (nodekey) (solana_validator_root_slot) * on (nodekey) group_left (node) max by (nodekey, node) (label_replace(solana_node_identity{node=~\"$node\"}, \"nodekey\", \"$1\", \"identity\", \"(.+)\") and on (nodekey) group by (nodekey) (solana_validator_last_vote{nodekey=~\"$identity\"}))",
+          "legendFormat": "{{node}}: {{nodekey}}",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
@@ -1714,8 +1714,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "solana:identity_balance:sol",
-          "legendFormat": "{{address}}",
+          "expr": "max by (nodekey) (label_replace(solana:identity_balance:sol, \"nodekey\", \"$1\", \"address\", \"(.+)\")) * on (nodekey) group_left (node) max by (nodekey, node) (label_replace(solana_node_identity{node=~\"$node\"}, \"nodekey\", \"$1\", \"identity\", \"(.+)\") and on (nodekey) group by (nodekey) (solana_validator_last_vote{nodekey=~\"$identity\"}))",
+          "legendFormat": "{{node}}: {{nodekey}}",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
@@ -1747,8 +1747,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "-delta(solana:identity_balance:sol[1h])",
-          "legendFormat": "{{address}}",
+          "expr": "max by (nodekey) (label_replace(-delta(solana:identity_balance:sol[1h]), \"nodekey\", \"$1\", \"address\", \"(.+)\")) * on (nodekey) group_left (node) max by (nodekey, node) (label_replace(solana_node_identity{node=~\"$node\"}, \"nodekey\", \"$1\", \"identity\", \"(.+)\") and on (nodekey) group by (nodekey) (solana_validator_last_vote{nodekey=~\"$identity\"}))",
+          "legendFormat": "{{node}}: {{nodekey}}",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
@@ -1792,7 +1792,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "solana_node_is_healthy",
+          "expr": "solana_node_is_healthy{node=~\"$node\"}",
           "legendFormat": "{{node}}",
           "datasource": {
             "type": "prometheus",
@@ -1834,7 +1834,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "solana_node_num_slots_behind",
+          "expr": "solana_node_num_slots_behind{node=~\"$node\"}",
           "legendFormat": "{{node}}",
           "datasource": {
             "type": "prometheus",
@@ -1867,7 +1867,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "count by (node, version) (solana_node_version)",
+          "expr": "count by (node, version) (solana_node_version{node=~\"$node\"})",
           "legendFormat": "",
           "datasource": {
             "type": "prometheus",
@@ -1914,7 +1914,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "node_filesystem_avail_bytes{mountpoint=\"/mnt/ledger\"}",
+          "expr": "node_filesystem_avail_bytes{node=~\"$node\",mountpoint=\"/mnt/ledger\"}",
           "legendFormat": "{{node}}",
           "datasource": {
             "type": "prometheus",
@@ -1947,7 +1947,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "node_filesystem_avail_bytes{mountpoint=\"/mnt/ledger\"} / clamp_min(-deriv(node_filesystem_avail_bytes{mountpoint=\"/mnt/ledger\"}[1h]), 1) / 3600",
+          "expr": "node_filesystem_avail_bytes{node=~\"$node\",mountpoint=\"/mnt/ledger\"} / clamp_min(-deriv(node_filesystem_avail_bytes{node=~\"$node\",mountpoint=\"/mnt/ledger\"}[1h]), 1) / 3600",
           "legendFormat": "{{node}}",
           "datasource": {
             "type": "prometheus",
@@ -1980,7 +1980,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "increase(node_systemd_service_restart_total{name=\"sol.service\"}[15m])",
+          "expr": "increase(node_systemd_service_restart_total{node=~\"$node\",name=\"sol.service\"}[15m])",
           "legendFormat": "{{node}}",
           "datasource": {
             "type": "prometheus",
@@ -2013,7 +2013,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "node_systemd_unit_state{name=\"sol.service\",state=\"active\"}",
+          "expr": "node_systemd_unit_state{node=~\"$node\",name=\"sol.service\",state=\"active\"}",
           "legendFormat": "{{node}}",
           "datasource": {
             "type": "prometheus",
@@ -2057,7 +2057,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes",
+          "expr": "node_memory_MemAvailable_bytes{node=~\"$node\"} / node_memory_MemTotal_bytes{node=~\"$node\"}",
           "legendFormat": "{{node}}",
           "datasource": {
             "type": "prometheus",
@@ -2168,7 +2168,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (node, level) (count_over_time({job=\"solana-validator\", level=~\"WARN|ERROR\"}[1m]))",
+          "expr": "sum by (node, level) (count_over_time({job=\"solana-validator\", node=~\"$node\", level=~\"WARN|ERROR\"}[1m]))",
           "legendFormat": "{{node}} {{level}}",
           "datasource": {
             "type": "loki",
@@ -2202,7 +2202,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (node) (rate({job=\"solana-validator\"}[1m]))",
+          "expr": "sum by (node) (rate({job=\"solana-validator\", node=~\"$node\"}[1m]))",
           "legendFormat": "{{node}}",
           "datasource": {
             "type": "loki",
@@ -2236,7 +2236,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "{job=\"solana-validator\", level=~\"WARN|ERROR\"}",
+          "expr": "{job=\"solana-validator\", node=~\"$node\", level=~\"WARN|ERROR\"}",
           "legendFormat": "",
           "datasource": {
             "type": "loki",
@@ -2269,7 +2269,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "{job=\"systemd\"}",
+          "expr": "{job=\"systemd\", node=~\"$node\"}",
           "legendFormat": "",
           "datasource": {
             "type": "loki",
@@ -2279,5 +2279,65 @@
       ],
       "timeFrom": "24h"
     }
-  ]
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "node",
+        "label": "Host",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "query": {
+          "query": "label_values(solana_node_identity, node)",
+          "refId": "node"
+        },
+        "definition": "label_values(solana_node_identity, node)",
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "refresh": 2,
+        "sort": 1
+      },
+      {
+        "name": "identity",
+        "label": "Validator identity",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "query": {
+          "query": "label_values(solana_validator_last_vote, nodekey)",
+          "refId": "identity"
+        },
+        "definition": "label_values(solana_validator_last_vote, nodekey)",
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "refresh": 2,
+        "sort": 1
+      }
+    ]
+  }
 }

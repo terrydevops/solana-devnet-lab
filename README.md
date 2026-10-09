@@ -141,6 +141,10 @@ lasts, the commission waiting in the vote account, vote lag, credits against the
 and skip rate. Under it, the failover pair side by side: which host is active, which is standby,
 and whether the standby could take over right now. After a switch the two rows trade places.
 
+Two dropdowns at the top filter every panel by host and by validator identity. The validator
+graphs carry the host that runs the identity in their legend, so a failover shows in each of them
+as the line passing from one host to the other.
+
 The reasoning behind each signal, with the numbers read off the running stack, is in
 [`docs/monitoring-rationale.md`](docs/monitoring-rationale.md). The dashboard is generated:
 `python3 monitoring/scripts/build-dashboard.py`.

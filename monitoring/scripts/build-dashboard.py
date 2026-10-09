@@ -9,6 +9,7 @@ thousand lines of JSON. Rows follow the same five layers as the alert rules, top
 """
 import json
 import pathlib
+import re
 import sys
 
 DS = {"type": "prometheus", "uid": "prometheus"}
@@ -270,6 +271,52 @@ LAYERS = [
 HEIGHT = {"stat": 4, "timeseries": 8, "table": 8, "logs": 8, "state-timeline": 4}
 
 
+# ---- filters and the host of each validator -------------------------------------------------
+# Two dropdowns at the top: Host and Validator identity. Every panel honours them.
+#
+# A validator's metrics are keyed by identity, and the identity moves between hosts. Joining them
+# with "which host runs this identity right now" puts the host into the legend, so a failover
+# shows in every validator graph as the line changing from one host's colour to the other's.
+HOST_OF = ('max by (nodekey, node) (label_replace(solana_node_identity{node=~"$node"}, "nodekey", "$1", "identity", "(.+)")'
+           ' and on (nodekey) group by (nodekey) (solana_validator_last_vote{nodekey=~"$identity"}))')
+PER_VALIDATOR_LAYERS = ("Layer 2", "Layer 3")
+IDENTITY_PANELS = ("Which host runs a voting identity", "Hosts per voting identity", "Identity each host runs")
+
+
+def with_host(expr, legend):
+    """A per-validator expression, with the host that runs the identity added as a label."""
+    if "by (nodekey, status)" in expr:
+        left = f"({expr})"
+    elif "identity_balance" in expr:
+        left = BY_ID.format(expr)
+    else:
+        left = f"max by (nodekey) ({expr})"
+    # the balance rules are keyed by address; after the join that label is the identity
+    return f"{left} * on (nodekey) group_left (node) {HOST_OF}", "{{node}}: " + legend.replace("{{address}}", "{{nodekey}}")
+
+
+def per_node(expr):
+    """Restrict node-level metrics to the hosts chosen in the Host dropdown."""
+    def add(m):
+        return f'{m.group(1)}{{node=~"$node",' if m.group(2) else f'{m.group(1)}{{node=~"$node"}}'
+    return re.sub(r"\b((?:solana_node|node)_[A-Za-z0-9_]+)(\{)?", add, expr)
+
+
+def scoped(layer, name, ds, expr, legend):
+    if ds is LOKI:
+        return expr.replace('{job="solana-validator"', '{job="solana-validator", node=~"$node"') \
+                   .replace('{job="systemd"', '{job="systemd", node=~"$node"'), legend
+    if layer.startswith(PER_VALIDATOR_LAYERS) and name not in IDENTITY_PANELS:
+        return with_host(expr, legend)
+    return per_node(expr), legend
+
+
+def variable(name, label, query):
+    return {"name": name, "label": label, "type": "query", "datasource": DS, "query": {"query": query, "refId": name},
+            "definition": query, "includeAll": True, "multi": True, "allValue": ".*",
+            "current": {"selected": True, "text": ["All"], "value": ["$__all"]}, "refresh": 2, "sort": 1}
+
+
 def build():
     panels, pid, y = [], 1, 0
     for title, items in LAYERS:
@@ -303,7 +350,7 @@ def build():
                 "targets": [
                     {"refId": chr(65 + i), "expr": expr, "legendFormat": legend, "datasource": ds,
                      **({"instant": True, "format": "table"} if kind == "table" else {})}
-                    for i, (expr, legend) in enumerate(targets)
+                    for i, (expr, legend) in enumerate(scoped(title, name, ds, e, lg) for e, lg in targets)
                 ],
             }
             if kind == "state-timeline":
@@ -331,20 +378,18 @@ def build():
         "uid": "solana-overview", "title": "Solana cluster overview", "tags": ["solana"],
         "schemaVersion": 39, "version": 1, "editable": False, "refresh": "10s",
         "time": {"from": "now-30m", "to": "now"}, "timezone": "utc", "panels": panels,
+        "templating": {"list": [
+            variable("node", "Host", "label_values(solana_node_identity, node)"),
+            variable("identity", "Validator identity", "label_values(solana_validator_last_vote, nodekey)"),
+        ]},
     }
 
 
 if __name__ == "__main__":
     if "--exprs" in sys.argv:
-        for _, items in LAYERS:
-            for item in items:
-                if isinstance(item, dict):
-                    for t in item["targets"]:
-                        print(f"prometheus\t{t['expr']}")
-                    continue
-                source = "loki" if len(item) > 6 else "prometheus"
-                for expr, _ in item[4]:
-                    print(f"{source}\t{expr}")
+        for panel in build()["panels"]:
+            for t in panel.get("targets", []):
+                print(f"{t['datasource']['type']}\t{t['expr']}")
     else:
         OUT.parent.mkdir(parents=True, exist_ok=True)
         OUT.write_text(json.dumps(build(), indent=2) + "\n")
